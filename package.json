@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build && node scripts/copy-hosting.mjs",
+    "build:pages": "next build",
     "start": "vinext start"
   },
   "dependencies": {
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@vitejs/plugin-react": "latest",
     "@vitejs/plugin-rsc": "latest",
+    "next": "latest",
     "vite": "latest"
   }
 }

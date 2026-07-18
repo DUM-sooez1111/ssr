@@ -6,6 +6,7 @@ const W = 1600;
 const H = 900;
 const THRONE = { x: 800, y: 154 };
 const LANES = [515, 650, 800, 950, 1085];
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 const SKILLS = [
   { key: "SPACE", name: "파멸의 낫", sub: "근접 · 2초", color: "#f3d18a" },
@@ -311,7 +312,7 @@ export default function DemonGame() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     const img = new Image();
-    img.src = "/demon-castle-map.png";
+    img.src = `${BASE_PATH}/demon-castle-map.png`;
     let raf;
     let last = performance.now();
     let uiClock = 0;
