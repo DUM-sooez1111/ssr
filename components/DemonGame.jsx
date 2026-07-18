@@ -541,15 +541,30 @@ export default function DemonGame() {
       s.shake = 4;
     }
     if (skill === "slash" && s.cooldowns.slash <= 0) {
-      s.cooldowns.slash = 2;
+      const slashCooldown = Math.max(1.1, 2 - s.magicLevel * .08);
+      const slashRadius = 135 + s.magicLevel * 4;
+      const slashDamage = 58 + s.magicLevel * 12;
+      s.cooldowns.slash = slashCooldown;
       s.rings.push({ x: s.player.x, y: s.player.y, r: 20, life: .42, color: "#f8d78e" });
-      for (const e of s.enemies) if (dist(s.player, e) < 135) { e.hp -= 58; addParticles(s, e.x, e.y, "#ffe1a2", 10, .8); }
+      for (const e of s.enemies) {
+        if (dist(s.player, e) < slashRadius) {
+          e.hp -= slashDamage;
+          addParticles(s, e.x, e.y, "#ffe1a2", 10, .8);
+        }
+      }
       s.shake = 5;
     }
     if (skill === "fire" && s.cooldowns.fire <= 0) {
-      s.cooldowns.fire = 7;
+      const fireCooldown = Math.max(4, 7 - s.magicLevel * .25);
+      const fireRadius = 170 + s.magicLevel * 6;
+      s.cooldowns.fire = fireCooldown;
       s.rings.push({ x: mouseRef.current.x, y: mouseRef.current.y, r: 15, life: .65, color: "#ff4f25" });
-      for (const e of s.enemies) if (dist(mouseRef.current, e) < 170) { e.hp -= 95 + s.magicLevel * 18; addParticles(s, e.x, e.y, "#ff4a22", 15, 1); }
+      for (const e of s.enemies) {
+        if (dist(mouseRef.current, e) < fireRadius) {
+          e.hp -= 95 + s.magicLevel * 18;
+          addParticles(s, e.x, e.y, "#ff4a22", 15, 1);
+        }
+      }
       s.shake = 10; s.flash = .55;
     }
     if (skill === "summon" && s.souls >= 8) {
@@ -872,7 +887,7 @@ export default function DemonGame() {
               <kbd>2</kbd><span>마왕 회복 <small>HP+35 · MAX+10</small></span><b>12</b>
             </button>
             <button onClick={() => buySoulItem("magic")} disabled={ui.souls < 18 + ui.magicLevel * 12}>
-              <kbd>3</kbd><span>마력 강화 <small>LV.{ui.magicLevel}</small></span><b>{18 + ui.magicLevel * 12}</b>
+              <kbd>3</kbd><span>마력 강화 <small>LV.{ui.magicLevel} · 스킬 피해/범위/쿨</small></span><b>{18 + ui.magicLevel * 12}</b>
             </button>
             <button onClick={() => buySoulItem("minion")} disabled={ui.souls < 20 + ui.minionLevel * 15}>
               <kbd>4</kbd><span>소환수 강화 <small>LV.{ui.minionLevel}</small></span><b>{20 + ui.minionLevel * 15}</b>
