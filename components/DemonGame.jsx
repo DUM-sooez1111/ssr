@@ -19,6 +19,17 @@ const SKILLS = [
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+const arenaXBounds = (y) => {
+  const depth = clamp((y - 180) / 675, 0, 1);
+  const inset = 360 - depth * 140;
+  return { min: inset, max: W - inset };
+};
+
+function keepInArena(entity, maxY = 855) {
+  entity.y = clamp(entity.y, 180, maxY);
+  const bounds = arenaXBounds(entity.y);
+  entity.x = clamp(entity.x, bounds.min, bounds.max);
+}
 
 function makeState() {
   return {
@@ -245,8 +256,9 @@ function updateGame(s, dt, keys, mouse, canvas) {
   const moveX = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
   const moveY = (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) - (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0);
   const len = Math.hypot(moveX, moveY) || 1;
-  s.player.x = clamp(s.player.x + moveX / len * 255 * dt, 270, 1330);
-  s.player.y = clamp(s.player.y + moveY / len * 255 * dt, 180, 765);
+  s.player.x += moveX / len * 255 * dt;
+  s.player.y += moveY / len * 255 * dt;
+  keepInArena(s.player, 765);
   s.player.angle = Math.atan2(mouse.y - s.player.y, mouse.x - s.player.x);
 
   const shoot = () => {
@@ -334,6 +346,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       const a = Math.atan2(s.player.y - m.y, s.player.x - m.x);
       if (best > 70) { m.x += Math.cos(a) * 70 * dt; m.y += Math.sin(a) * 70 * dt; }
     }
+    keepInArena(m);
   }
 
   for (const e of s.enemies) {
@@ -356,8 +369,6 @@ function updateGame(s, dt, keys, mouse, canvas) {
         });
         e.attack = 1.55;
       }
-      e.x = clamp(e.x, 270, 1330);
-      e.y = clamp(e.y, 180, 855);
     } else if (dp > e.r + 27) {
       e.x += Math.cos(a) * e.speed * dt;
       e.y += Math.sin(a) * e.speed * dt;
@@ -365,6 +376,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       s.player.hp -= e.damage; s.player.hurt = .18; s.shake = 7; e.attack = 1.05;
       addParticles(s, s.player.x, s.player.y, "#ff3333", 10, .7);
     }
+    keepInArena(e);
   }
 
   for (const e of s.enemies) {
@@ -539,11 +551,13 @@ export default function DemonGame() {
   const buySoulItem = useCallback((item) => {
     const s = stateRef.current;
     if (!s.started || s.over) return;
+    let purchased = false;
     if (item === "sword") {
       const cost = 15 + s.swordLevel * 10;
       if (s.souls < cost) return;
       s.souls -= cost;
       s.swordLevel++;
+      purchased = true;
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .7, color: "#72ddff" });
       addParticles(s, s.player.x, s.player.y, "#72ddff", 18, .8);
     }
@@ -551,6 +565,7 @@ export default function DemonGame() {
       s.souls -= 12;
       s.player.maxHp += 10;
       s.player.hp = Math.min(s.player.maxHp, s.player.hp + 35);
+      purchased = true;
       addParticles(s, s.player.x, s.player.y, "#65f0a0", 16, .7);
     }
     if (item === "magic") {
@@ -558,6 +573,7 @@ export default function DemonGame() {
       if (s.souls < cost) return;
       s.souls -= cost;
       s.magicLevel++;
+      purchased = true;
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .75, color: "#c077ff" });
       addParticles(s, s.player.x, s.player.y, "#c077ff", 18, .7);
     }
@@ -567,11 +583,17 @@ export default function DemonGame() {
       s.souls -= cost;
       s.minionLevel++;
       for (const minion of s.minions) minion.level = s.minionLevel;
+      purchased = true;
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .75, color: "#70efa4" });
       addParticles(s, s.player.x, s.player.y, "#70efa4", 20, .75);
     }
-    syncUi();
-  }, [syncUi]);
+    if (purchased) {
+      syncUi();
+      saveGame(true);
+      setSaveNotice("강화 저장됨");
+      window.setTimeout(() => setSaveNotice(""), 1200);
+    }
+  }, [saveGame, syncUi]);
 
   const start = useCallback(() => {
     localStorage.removeItem(SAVE_KEY);
@@ -660,12 +682,6 @@ export default function DemonGame() {
       shade.addColorStop(.32, "rgba(9,3,10,.28)");
       shade.addColorStop(1, "rgba(3,6,10,.68)");
       ctx.fillStyle = shade; ctx.fillRect(0, 0, W, H);
-
-      ctx.strokeStyle = "rgba(255,65,41,.35)";
-      ctx.lineWidth = 3;
-      ctx.setLineDash([12, 16]);
-      ctx.beginPath(); ctx.moveTo(800, 220); ctx.lineTo(800, 860); ctx.stroke();
-      ctx.setLineDash([]);
 
       for (const r of s.rings) {
         ctx.globalAlpha = clamp(r.life * 1.8, 0, 1);

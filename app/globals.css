@@ -106,17 +106,17 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: 
 .rest-hud small { color: #739ba0; font-size: 8px; margin-top: 5px; }
 
 .soul-shop {
-  position: absolute; z-index: 4; left: 2.2%; bottom: 3.2%; width: 180px;
-  padding: 8px; background: rgba(5,12,15,.9); border: 1px solid rgba(84,221,239,.4);
+  position: absolute; z-index: 4; left: 2.2%; top: 18%; width: 174px;
+  padding: 6px; background: rgba(5,12,15,.9); border: 1px solid rgba(84,221,239,.4);
   box-shadow: 0 8px 28px #000, inset 0 0 20px rgba(52,205,229,.06);
   backdrop-filter: blur(8px);
 }
-.shop-title { display: flex; justify-content: space-between; align-items: center; padding: 0 3px 7px; }
+.shop-title { display: flex; justify-content: space-between; align-items: center; padding: 0 3px 5px; }
 .shop-title span { color: #79ddeb; font-size: 9px; font-weight: 900; letter-spacing: .14em; }
 .shop-title b { color: #d2fbff; font-size: 12px; text-shadow: 0 0 10px #44dcec; }
 .soul-shop button {
   width: 100%; display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 5px;
-  padding: 6px 7px; color: #d8e8e8; background: #101719; border: 0; border-top: 1px solid #273a3d;
+  padding: 4px 6px; color: #d8e8e8; background: #101719; border: 0; border-top: 1px solid #273a3d;
   cursor: pointer; text-align: left;
 }
 .soul-shop button:hover:not(:disabled) { background: #173036; color: #fff; }
@@ -212,7 +212,7 @@ footer b { color: #403930; margin: 0 7px; }
   .rest-hud span, .rest-hud small { display: none; }
   .rest-hud b { font-size: 12px; }
   .rest-hud strong { font-size: 20px; }
-  .soul-shop { left: 1.5%; bottom: 2%; width: auto; padding: 4px; }
+  .soul-shop { left: 1.5%; top: 20%; width: auto; padding: 4px; }
   .shop-title { padding-bottom: 3px; }
   .shop-title span { display: none; }
   .soul-shop button { grid-template-columns: 18px auto; padding: 3px 4px; }
