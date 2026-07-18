@@ -12,7 +12,7 @@ const SKILLS = [
   { id: "sword", key: "R / 우클릭", name: "마왕검 휘두르기", sub: "전방 · 0.8초", color: "#73d7ff", icon: "⚔" },
   { id: "slash", key: "SPACE", name: "파멸의 낫", sub: "근접 · 2초", color: "#f3d18a", icon: "☾" },
   { id: "fire", key: "Q", name: "지옥불 폭발", sub: "범위 · 7초", color: "#ff5b28", icon: "♨" },
-  { id: "summon", key: "E", name: "망자 소환", sub: "부하 · 12초", color: "#b889ff", icon: "♟" },
+  { id: "summon", key: "E", name: "망자 소환", sub: "영혼 8 · 쿨타임 없음", color: "#b889ff", icon: "♟" },
 ];
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -39,7 +39,7 @@ function makeState() {
     flash: 0,
     player: { x: 800, y: 265, hp: 100, angle: Math.PI / 2, hurt: 0 },
     magicLevel: 0,
-    cooldowns: { sword: 0, slash: 0, fire: 0, summon: 0, shot: 0 },
+    cooldowns: { sword: 0, slash: 0, fire: 0, shot: 0 },
     enemies: [],
     shots: [],
     enemyShots: [],
@@ -468,8 +468,8 @@ export default function DemonGame() {
       for (const e of s.enemies) if (dist(mouseRef.current, e) < 170) { e.hp -= 95 + s.magicLevel * 18; addParticles(s, e.x, e.y, "#ff4a22", 15, 1); }
       s.shake = 10; s.flash = .55;
     }
-    if (skill === "summon" && s.cooldowns.summon <= 0) {
-      s.cooldowns.summon = 12;
+    if (skill === "summon" && s.souls >= 8) {
+      s.souls -= 8;
       for (let i = 0; i < 3; i++) {
         const a = i / 3 * Math.PI * 2;
         s.minions.push({
@@ -782,7 +782,13 @@ export default function DemonGame() {
             {SKILLS.map((x) => {
               const cd = ui.cooldowns[x.id] || 0;
               return (
-                <button key={x.id} className="skill" onClick={() => useSkill(x.id)} style={{ "--skill": x.color }}>
+                <button
+                  key={x.id}
+                  className="skill"
+                  onClick={() => useSkill(x.id)}
+                  disabled={x.id === "summon" && ui.souls < 8}
+                  style={{ "--skill": x.color }}
+                >
                   <kbd>{x.key}</kbd>
                   <span className="skill-icon">{x.icon}</span>
                   <span className="skill-copy"><b>{x.name}</b><small>{x.sub}</small></span>
