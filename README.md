@@ -4,7 +4,7 @@
 
 ## 바로 플레이
 
-**[마왕의 최종 방어선 플레이하기](https://demon-king-final-stand.sooez1111.chatgpt.site)**
+**[마왕의 최종 방어선 플레이하기](https://dum-sooez1111.github.io/ssr/)**
 
 ## 조작법
 
