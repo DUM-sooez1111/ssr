@@ -140,8 +140,9 @@ function drawEnemy(ctx, e, sprites) {
     ctx.beginPath();
     ctx.ellipse(0, e.r + 12, size * .25, size * .09, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowColor = e.type === "boss" ? "#ff3c25" : e.color;
-    ctx.shadowBlur = e.type === "boss" ? 22 : 9;
+    const reinforced = (e.tier || 0) > 0;
+    ctx.shadowColor = e.type === "boss" ? "#ff3c25" : reinforced ? "#ffd25c" : e.color;
+    ctx.shadowBlur = e.type === "boss" ? 22 : reinforced ? 15 : 9;
     ctx.drawImage(
       sprites,
       col * cellWidth, row * cellHeight, cellWidth, cellHeight,
@@ -153,8 +154,14 @@ function drawEnemy(ctx, e, sprites) {
     const barY = -size * .69;
     ctx.fillStyle = "rgba(15,8,8,.9)";
     ctx.fillRect(-barWidth / 2, barY, barWidth, e.type === "boss" ? 9 : 6);
-    ctx.fillStyle = e.type === "boss" ? "#ff3525" : "#e34736";
+    ctx.fillStyle = e.type === "boss" ? "#ff3525" : reinforced ? "#f2bd3f" : "#e34736";
     ctx.fillRect(-barWidth / 2, barY, barWidth * clamp(e.hp / e.maxHp, 0, 1), e.type === "boss" ? 9 : 6);
+    if (reinforced && e.type !== "boss") {
+      ctx.fillStyle = "#ffe49a";
+      ctx.font = "700 13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`★${e.tier}`, 0, barY - 7);
+    }
     ctx.restore();
     return;
   }
@@ -240,12 +247,13 @@ function updateGame(s, dt, keys, mouse, canvas) {
   }
 
   if (s.wave % 10 === 0 && s.bossSpawnedWave !== s.wave) {
-    const maxHp = 1200 + s.wave * 110;
+    const heroTier = Math.floor(s.wave / 10);
+    const maxHp = Math.round((1200 + s.wave * 110) * (1 + heroTier * .22));
     s.enemies.push({
       x: 800, y: 870, r: 42, hp: maxHp, maxHp,
-      speed: 38 + Math.min(24, s.wave * .45),
-      damage: 34 + Math.floor(s.wave * .7),
-      type: "boss", color: "#ff3425", attack: 0,
+      speed: (38 + Math.min(24, s.wave * .45)) * (1 + Math.min(.2, heroTier * .035)),
+      damage: Math.round((34 + Math.floor(s.wave * .7)) * (1 + heroTier * .16)),
+      type: "boss", color: "#ff3425", attack: 0, tier: heroTier,
     });
     s.bossSpawnedWave = s.wave;
     s.flash = 1.4;
@@ -279,6 +287,10 @@ function updateGame(s, dt, keys, mouse, canvas) {
 
   if (s.spawnTimer <= 0 && s.restTimer <= 0) {
     const count = Math.min(4, 1 + Math.floor(s.wave / 5));
+    const heroTier = Math.floor(s.wave / 10);
+    const hpMultiplier = 1 + heroTier * .35;
+    const damageMultiplier = 1 + heroTier * .2;
+    const speedMultiplier = 1 + Math.min(.3, heroTier * .05);
     const availableTypes = ["knight"];
     if (s.wave >= 2) availableTypes.push("mage");
     if (s.wave >= 3) availableTypes.push("tank");
@@ -287,7 +299,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
     if (s.wave >= 8) availableTypes.push("paladin");
     for (let i = 0; i < count; i++) {
       const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
-      const stats = {
+      const baseStats = {
         knight: { hp: 84 + s.wave * 12, r: 20, speed: 78, damage: 10, color: "#3268bb" },
         mage: { hp: 68 + s.wave * 9, r: 20, speed: 64, damage: 10, color: "#426ee9" },
         tank: { hp: 150 + s.wave * 18, r: 25, speed: 45, damage: 18, color: "#bd8435" },
@@ -295,12 +307,18 @@ function updateGame(s, dt, keys, mouse, canvas) {
         assassin: { hp: 62 + s.wave * 8, r: 17, speed: 136, damage: 16 + Math.floor(s.wave * .4), color: "#633477" },
         paladin: { hp: 225 + s.wave * 22, r: 28, speed: 42, damage: 24 + Math.floor(s.wave * .45), color: "#d1a83f" },
       }[type];
+      const stats = {
+        ...baseStats,
+        hp: Math.round(baseStats.hp * hpMultiplier),
+        speed: baseStats.speed * speedMultiplier,
+        damage: Math.round(baseStats.damage * damageMultiplier),
+      };
       s.enemies.push({
         x: LANES[Math.floor(Math.random() * LANES.length)] + (Math.random() - .5) * 45,
         y: 870 + i * 35, r: stats.r,
         hp: stats.hp, maxHp: stats.hp, speed: stats.speed,
         damage: stats.damage, type, color: stats.color,
-        attack: 0,
+        attack: 0, tier: heroTier,
       });
     }
     s.spawnTimer = Math.max(.58, 2.05 - s.wave * .095);
@@ -822,7 +840,7 @@ export default function DemonGame() {
           <div><strong>마왕의 최종 방어선</strong><small>DEMON KING&apos;S LAST STAND</small></div>
         </div>
         <div className="wave-label">
-          <span>{ui.rest > 0 ? "마력 회복 중" : "무한 침공"}</span>
+          <span>{ui.rest > 0 ? "마력 회복 중" : ui.wave >= 10 ? `영웅 강화 ★${Math.floor(ui.wave / 10)}` : "무한 침공"}</span>
           <b>{ui.rest > 0 ? `REST ${Math.ceil(ui.rest)}` : `WAVE ${ui.wave} ∞`}</b>
         </div>
         <div className="top-actions">
