@@ -27,6 +27,7 @@ function makeState() {
     time: 0,
     wave: 1,
     waveTimer: 0,
+    restTimer: 0,
     spawnTimer: 0,
     bossSpawnedWave: 0,
     kills: 0,
@@ -201,7 +202,12 @@ function drawEnemy(ctx, e, sprites) {
 function updateGame(s, dt, keys, mouse, canvas) {
   if (!s.started || s.over) return;
   s.time += dt;
-  s.waveTimer += dt;
+  if (s.restTimer > 0) {
+    s.restTimer = Math.max(0, s.restTimer - dt);
+    s.player.hp = Math.min(100, s.player.hp + dt * 2.5);
+  } else {
+    s.waveTimer += dt;
+  }
   s.spawnTimer -= dt;
   s.shake = Math.max(0, s.shake - dt * 18);
   s.flash = Math.max(0, s.flash - dt * 3);
@@ -209,8 +215,14 @@ function updateGame(s, dt, keys, mouse, canvas) {
   for (const k in s.cooldowns) s.cooldowns[k] = Math.max(0, s.cooldowns[k] - dt);
 
   if (s.waveTimer > 24) {
+    const completedWave = s.wave;
     s.wave++;
     s.waveTimer = 0;
+    if (completedWave % 5 === 0) {
+      s.restTimer = 10;
+      s.rings.push({ x: s.player.x, y: s.player.y, r: 18, life: 1.1, color: "#65eaff" });
+      addParticles(s, s.player.x, s.player.y, "#65eaff", 16, .65);
+    }
     s.flash = 1;
     s.rings.push({ x: THRONE.x, y: THRONE.y, r: 20, life: 1.5, color: "#ffcc52" });
   }
@@ -245,7 +257,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
   };
   if (mouse.down || keys.has("KeyF")) shoot();
 
-  if (s.spawnTimer <= 0) {
+  if (s.spawnTimer <= 0 && s.restTimer <= 0) {
     const count = Math.min(4, 1 + Math.floor(s.wave / 5));
     const availableTypes = ["knight"];
     if (s.wave >= 2) availableTypes.push("mage");
@@ -411,14 +423,14 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, hp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
     const boss = s.enemies.find(e => e.type === "boss");
     setUi({
-      started: s.started, over: s.over, win: s.win, wave: s.wave,
+      started: s.started, over: s.over, win: s.win, wave: s.wave, rest: s.restTimer,
       hp: Math.max(0, s.player.hp),
       kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, minionLevel: s.minionLevel, cooldowns: { ...s.cooldowns },
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
@@ -673,7 +685,10 @@ export default function DemonGame() {
           <span className="brand-mark">♛</span>
           <div><strong>마왕의 최종 방어선</strong><small>DEMON KING&apos;S LAST STAND</small></div>
         </div>
-        <div className="wave-label"><span>무한 침공</span><b>WAVE {ui.wave} ∞</b></div>
+        <div className="wave-label">
+          <span>{ui.rest > 0 ? "마력 회복 중" : "무한 침공"}</span>
+          <b>{ui.rest > 0 ? `REST ${Math.ceil(ui.rest)}` : `WAVE ${ui.wave} ∞`}</b>
+        </div>
         <button className="sound" onClick={() => setMuted(v => !v)} aria-label="소리 전환">{muted ? "소리 꺼짐" : "소리 켜짐"}</button>
       </header>
 
@@ -711,6 +726,15 @@ export default function DemonGame() {
             <span>10웨이브 강적</span>
             <b>심연의 용사왕</b>
             <div><i style={{ width: `${ui.boss.hp / ui.boss.maxHp * 100}%` }} /></div>
+          </div>
+        )}
+
+        {ui.rest > 0 && (
+          <div className="rest-hud">
+            <span>BREATHING ROOM</span>
+            <b>휴식 시간</b>
+            <strong>{Math.ceil(ui.rest)}</strong>
+            <small>새 적 생성 중지 · 체력 회복 · 영혼 상점 이용 가능</small>
           </div>
         )}
 
