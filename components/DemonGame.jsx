@@ -104,9 +104,48 @@ function drawPlayer(ctx, p, time) {
   ctx.restore();
 }
 
-function drawEnemy(ctx, e) {
+function drawEnemy(ctx, e, sprites) {
   ctx.save();
   ctx.translate(e.x, e.y);
+
+  if (sprites?.complete && sprites.naturalWidth > 0) {
+    const spriteCells = {
+      knight: [0, 0],
+      mage: [1, 0],
+      tank: [2, 0],
+      archer: [3, 0],
+      assassin: [0, 1],
+      paladin: [1, 1],
+      boss: [2, 1],
+    };
+    const [col, row] = spriteCells[e.type] || spriteCells.knight;
+    const cellWidth = sprites.naturalWidth / 4;
+    const cellHeight = sprites.naturalHeight / 2;
+    const size = e.type === "boss" ? 178 : Math.max(112, e.r * 4.8);
+
+    ctx.fillStyle = "rgba(0,0,0,.38)";
+    ctx.beginPath();
+    ctx.ellipse(0, e.r + 12, size * .25, size * .09, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowColor = e.type === "boss" ? "#ff3c25" : e.color;
+    ctx.shadowBlur = e.type === "boss" ? 22 : 9;
+    ctx.drawImage(
+      sprites,
+      col * cellWidth, row * cellHeight, cellWidth, cellHeight,
+      -size / 2, e.r + 18 - size, size, size,
+    );
+    ctx.shadowBlur = 0;
+
+    const barWidth = e.type === "boss" ? 110 : Math.max(42, e.r * 2.2);
+    const barY = -size * .69;
+    ctx.fillStyle = "rgba(15,8,8,.9)";
+    ctx.fillRect(-barWidth / 2, barY, barWidth, e.type === "boss" ? 9 : 6);
+    ctx.fillStyle = e.type === "boss" ? "#ff3525" : "#e34736";
+    ctx.fillRect(-barWidth / 2, barY, barWidth * clamp(e.hp / e.maxHp, 0, 1), e.type === "boss" ? 9 : 6);
+    ctx.restore();
+    return;
+  }
+
   ctx.shadowColor = e.color;
   ctx.shadowBlur = 8;
   ctx.fillStyle = e.type === "boss" ? "#351016" : "#d7d4c9";
@@ -501,6 +540,8 @@ export default function DemonGame() {
     const ctx = canvas.getContext("2d");
     const img = new Image();
     img.src = `${BASE_PATH}/demon-castle-map.png`;
+    const enemySprites = new Image();
+    enemySprites.src = `${BASE_PATH}/enemy-sprites.png`;
     let raf;
     let last = performance.now();
     let uiClock = 0;
@@ -565,7 +606,7 @@ export default function DemonGame() {
         ctx.fillStyle = "#151515"; ctx.fillRect(-8, -5, 5, 5); ctx.fillRect(3, -5, 5, 5);
         ctx.restore();
       }
-      for (const e of s.enemies) drawEnemy(ctx, e);
+      for (const e of s.enemies) drawEnemy(ctx, e, enemySprites);
       if (s.started) drawPlayer(ctx, s.player, s.time);
       for (const swing of s.swings) {
         const alpha = clamp(swing.life / swing.maxLife, 0, 1);
