@@ -265,7 +265,14 @@ function updateGame(s, dt, keys, mouse, canvas) {
     if (s.cooldowns.shot > 0) return;
     s.cooldowns.shot = .28;
     const a = s.player.angle;
-    s.shots.push({ x: s.player.x + Math.cos(a) * 30, y: s.player.y + Math.sin(a) * 30, vx: Math.cos(a) * 620, vy: Math.sin(a) * 620, life: 1.35, damage: 24 + s.magicLevel * 6 });
+    s.shots.push({
+      x: s.player.x + Math.cos(a) * 30,
+      y: s.player.y + Math.sin(a) * 30,
+      vx: Math.cos(a) * 620,
+      vy: Math.sin(a) * 620,
+      life: 1.35,
+      damage: 24 + s.magicLevel * 6 + s.swordLevel * 5,
+    });
     addParticles(s, s.player.x, s.player.y, "#d574ff", 5, .4);
   };
   if (mouse.down || keys.has("KeyF")) shoot();
@@ -859,7 +866,7 @@ export default function DemonGame() {
           <div className="soul-shop">
             <div className="shop-title"><span>영혼 상점</span><b>◈ {ui.souls}</b></div>
             <button onClick={() => buySoulItem("sword")} disabled={ui.souls < 15 + ui.swordLevel * 10}>
-              <kbd>1</kbd><span>마왕검 강화 <small>LV.{ui.swordLevel}</small></span><b>{15 + ui.swordLevel * 10}</b>
+              <kbd>1</kbd><span>마왕검 강화 <small>LV.{ui.swordLevel} · 기본 공격 +5</small></span><b>{15 + ui.swordLevel * 10}</b>
             </button>
             <button onClick={() => buySoulItem("heal")} disabled={ui.souls < 12}>
               <kbd>2</kbd><span>마왕 회복 <small>HP+35 · MAX+10</small></span><b>12</b>
