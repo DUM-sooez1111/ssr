@@ -42,6 +42,12 @@ button { font: inherit; }
   padding: 8px 12px; cursor: pointer; font-size: 11px;
 }
 .sound:hover { border-color: var(--gold); color: var(--paper); }
+.top-actions { display: flex; align-items: center; gap: 7px; }
+.save-button {
+  min-width: 65px; padding: 8px 10px; color: #8de5ef; background: rgba(13,37,42,.72);
+  border: 1px solid #35656b; border-radius: 3px; cursor: pointer; font-size: 11px;
+}
+.save-button:hover { color: #d7fbff; border-color: #69d8e5; }
 
 .game-wrap {
   position: relative; width: min(1500px, calc((100vh - 150px) * 1.7778), 100%);
@@ -145,6 +151,8 @@ h1 em { color: #e23b29; font-style: normal; }
   clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
 }
 .start-btn:hover { filter: brightness(1.2); transform: translateY(-1px); }
+.start-actions { display: flex; justify-content: center; gap: 10px; }
+.start-btn.secondary { color: #c6bca9; background: rgba(18,14,13,.9); border-color: #716150; box-shadow: none; }
 .start-btn span { display: block; font-weight: 900; font-size: 17px; letter-spacing: .09em; }
 .start-btn small { display: block; color: #eaa89c; font-size: 7px; letter-spacing: .25em; margin-top: 3px; }
 .quick-controls { display: flex; gap: 20px; color: #8e8271; font-size: 10px; margin-top: 22px; }
@@ -188,6 +196,7 @@ footer b { color: #403930; margin: 0 7px; }
   .topbar { min-height: 48px; }
   .brand-mark { width: 34px; height: 34px; }
   .brand small, .wave-label span, .sound, footer > span { display: none; }
+  .save-button { min-width: 48px; padding: 6px; font-size: 9px; }
   .wave-label b { font-size: 12px; }
   .game-wrap { width: 100%; margin-top: max(0px, calc((100vh - 150px - 56.25vw) / 2)); }
   .portrait { width: 36px; height: 36px; font-size: 18px; }
@@ -216,6 +225,7 @@ footer b { color: #403930; margin: 0 7px; }
   .sigil { width: 38px; height: 38px; font-size: 20px; margin-bottom: 10px; }
   .lead { margin: 10px 0 14px; }
   .start-btn { min-width: 190px; padding: 9px 20px; }
+  .start-actions { flex-direction: column; gap: 6px; }
   footer { justify-content: center; }
 }
 
