@@ -37,7 +37,7 @@ function makeState() {
     minionLevel: 0,
     shake: 0,
     flash: 0,
-    player: { x: 800, y: 265, hp: 100, angle: Math.PI / 2, hurt: 0 },
+    player: { x: 800, y: 265, hp: 100, maxHp: 100, angle: Math.PI / 2, hurt: 0 },
     magicLevel: 0,
     cooldowns: { sword: 0, slash: 0, fire: 0, shot: 0 },
     enemies: [],
@@ -204,7 +204,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.time += dt;
   if (s.restTimer > 0) {
     s.restTimer = Math.max(0, s.restTimer - dt);
-    s.player.hp = Math.min(100, s.player.hp + dt * 2.5);
+    s.player.hp = Math.min(s.player.maxHp, s.player.hp + dt * 2.5);
   } else {
     s.waveTimer += dt;
   }
@@ -423,7 +423,7 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
 
   const syncUi = useCallback(() => {
@@ -431,7 +431,7 @@ export default function DemonGame() {
     const boss = s.enemies.find(e => e.type === "boss");
     setUi({
       started: s.started, over: s.over, win: s.win, wave: s.wave, rest: s.restTimer,
-      hp: Math.max(0, s.player.hp),
+      hp: Math.max(0, s.player.hp), maxHp: s.player.maxHp,
       kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, minionLevel: s.minionLevel, cooldowns: { ...s.cooldowns },
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
     });
@@ -495,9 +495,10 @@ export default function DemonGame() {
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .7, color: "#72ddff" });
       addParticles(s, s.player.x, s.player.y, "#72ddff", 18, .8);
     }
-    if (item === "heal" && s.souls >= 12 && s.player.hp < 100) {
+    if (item === "heal" && s.souls >= 12) {
       s.souls -= 12;
-      s.player.hp = Math.min(100, s.player.hp + 35);
+      s.player.maxHp += 10;
+      s.player.hp = Math.min(s.player.maxHp, s.player.hp + 35);
       addParticles(s, s.player.x, s.player.y, "#65f0a0", 16, .7);
     }
     if (item === "magic") {
@@ -710,8 +711,8 @@ export default function DemonGame() {
         <div className="hud top-left">
           <div className="portrait">♛</div>
           <div className="bars">
-            <div className="bar-row"><span>마왕</span><b>{Math.ceil(ui.hp)}</b></div>
-            <div className="bar"><i className="hp" style={{ width: `${ui.hp}%` }} /></div>
+            <div className="bar-row"><span>마왕</span><b>{Math.ceil(ui.hp)} / {ui.maxHp}</b></div>
+            <div className="bar"><i className="hp" style={{ width: `${ui.hp / ui.maxHp * 100}%` }} /></div>
           </div>
         </div>
 
@@ -744,8 +745,8 @@ export default function DemonGame() {
             <button onClick={() => buySoulItem("sword")} disabled={ui.souls < 15 + ui.swordLevel * 10}>
               <kbd>1</kbd><span>마왕검 강화 <small>LV.{ui.swordLevel}</small></span><b>{15 + ui.swordLevel * 10}</b>
             </button>
-            <button onClick={() => buySoulItem("heal")} disabled={ui.souls < 12 || ui.hp >= 100}>
-              <kbd>2</kbd><span>마왕 회복 <small>+35</small></span><b>12</b>
+            <button onClick={() => buySoulItem("heal")} disabled={ui.souls < 12}>
+              <kbd>2</kbd><span>마왕 회복 <small>HP+35 · MAX+10</small></span><b>12</b>
             </button>
             <button onClick={() => buySoulItem("magic")} disabled={ui.souls < 18 + ui.magicLevel * 12}>
               <kbd>3</kbd><span>마력 강화 <small>LV.{ui.magicLevel}</small></span><b>{18 + ui.magicLevel * 12}</b>
