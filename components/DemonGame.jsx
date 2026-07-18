@@ -33,6 +33,7 @@ function makeState() {
     score: 0,
     souls: 0,
     swordLevel: 0,
+    minionLevel: 0,
     shake: 0,
     flash: 0,
     player: { x: 800, y: 265, hp: 100, angle: Math.PI / 2, hurt: 0 },
@@ -229,9 +230,13 @@ function updateGame(s, dt, keys, mouse, canvas) {
     }
     if (target) {
       const a = Math.atan2(target.y - m.y, target.x - m.x);
-      m.x += Math.cos(a) * 125 * dt; m.y += Math.sin(a) * 125 * dt;
+      const minionSpeed = 125 + m.level * 8;
+      m.x += Math.cos(a) * minionSpeed * dt; m.y += Math.sin(a) * minionSpeed * dt;
       m.attack -= dt;
-      if (best < 35 && m.attack <= 0) { hurtEnemy(target, 22, "#90e2b1"); m.attack = .75; }
+      if (best < 35 + m.level * 2 && m.attack <= 0) {
+        hurtEnemy(target, 22 + m.level * 10, "#90e2b1");
+        m.attack = Math.max(.38, .75 - m.level * .035);
+      }
     } else {
       const a = Math.atan2(s.player.y - m.y, s.player.x - m.x);
       if (best > 70) { m.x += Math.cos(a) * 70 * dt; m.y += Math.sin(a) * 70 * dt; }
@@ -298,7 +303,7 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, hp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, hp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
 
   const syncUi = useCallback(() => {
@@ -307,7 +312,7 @@ export default function DemonGame() {
     setUi({
       started: s.started, over: s.over, win: s.win, wave: s.wave,
       hp: Math.max(0, s.player.hp),
-      kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, cooldowns: { ...s.cooldowns },
+      kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, minionLevel: s.minionLevel, cooldowns: { ...s.cooldowns },
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
     });
   }, []);
@@ -347,7 +352,13 @@ export default function DemonGame() {
       s.cooldowns.summon = 12;
       for (let i = 0; i < 3; i++) {
         const a = i / 3 * Math.PI * 2;
-        s.minions.push({ x: s.player.x + Math.cos(a) * 55, y: s.player.y + Math.sin(a) * 55, life: 14, attack: 0 });
+        s.minions.push({
+          x: s.player.x + Math.cos(a) * 55,
+          y: s.player.y + Math.sin(a) * 55,
+          life: 14 + s.minionLevel * 2,
+          attack: 0,
+          level: s.minionLevel,
+        });
       }
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .7, color: "#b889ff" });
     }
@@ -377,6 +388,15 @@ export default function DemonGame() {
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .75, color: "#c077ff" });
       addParticles(s, s.player.x, s.player.y, "#c077ff", 18, .7);
     }
+    if (item === "minion") {
+      const cost = 20 + s.minionLevel * 15;
+      if (s.souls < cost) return;
+      s.souls -= cost;
+      s.minionLevel++;
+      for (const minion of s.minions) minion.level = s.minionLevel;
+      s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .75, color: "#70efa4" });
+      addParticles(s, s.player.x, s.player.y, "#70efa4", 20, .75);
+    }
     syncUi();
   }, [syncUi]);
 
@@ -399,6 +419,7 @@ export default function DemonGame() {
       if (e.code === "Digit1") buySoulItem("sword");
       if (e.code === "Digit2") buySoulItem("heal");
       if (e.code === "Digit3") buySoulItem("magic");
+      if (e.code === "Digit4") buySoulItem("minion");
     };
     const up = (e) => keysRef.current.delete(e.code);
     window.addEventListener("keydown", down, { passive: false });
@@ -453,6 +474,10 @@ export default function DemonGame() {
       }
       for (const m of s.minions) {
         ctx.save(); ctx.translate(m.x, m.y);
+        const minionScale = 1 + m.level * .06;
+        ctx.scale(minionScale, minionScale);
+        ctx.shadowColor = "#70efa4";
+        ctx.shadowBlur = 5 + m.level * 3;
         ctx.fillStyle = "#b9d8c2"; ctx.strokeStyle = "#1a3024"; ctx.lineWidth = 4;
         ctx.beginPath(); ctx.arc(0, 0, 15, 0, 7); ctx.fill(); ctx.stroke();
         ctx.fillStyle = "#151515"; ctx.fillRect(-8, -5, 5, 5); ctx.fillRect(3, -5, 5, 5);
@@ -577,6 +602,9 @@ export default function DemonGame() {
             </button>
             <button onClick={() => buySoulItem("magic")} disabled={ui.souls < 18 + ui.magicLevel * 12}>
               <kbd>3</kbd><span>마력 강화 <small>LV.{ui.magicLevel}</small></span><b>{18 + ui.magicLevel * 12}</b>
+            </button>
+            <button onClick={() => buySoulItem("minion")} disabled={ui.souls < 20 + ui.minionLevel * 15}>
+              <kbd>4</kbd><span>소환수 강화 <small>LV.{ui.minionLevel}</small></span><b>{20 + ui.minionLevel * 15}</b>
             </button>
           </div>
         )}
