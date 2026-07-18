@@ -7,6 +7,7 @@ const H = 900;
 const THRONE = { x: 800, y: 154 };
 const LANES = [515, 650, 800, 950, 1085];
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
+const SAVE_KEY = "demon-king-final-stand-save-v1";
 
 const SKILLS = [
   { id: "sword", key: "R / 우클릭", name: "마왕검 휘두르기", sub: "전방 · 0.8초", color: "#73d7ff", icon: "⚔" },
@@ -425,6 +426,8 @@ export default function DemonGame() {
   const mouseRef = useRef({ x: 800, y: 450, down: false });
   const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
+  const [hasSave, setHasSave] = useState(false);
+  const [saveNotice, setSaveNotice] = useState("");
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
@@ -436,6 +439,55 @@ export default function DemonGame() {
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
     });
   }, []);
+
+  const saveGame = useCallback((silent = false) => {
+    const s = stateRef.current;
+    if (!s.started || s.over) return;
+    const snapshot = {
+      ...s,
+      particles: [],
+      rings: [],
+      swings: [],
+      shots: [],
+      enemyShots: [],
+    };
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, savedAt: Date.now(), state: snapshot }));
+      setHasSave(true);
+      if (!silent) {
+        setSaveNotice("저장됨");
+        window.setTimeout(() => setSaveNotice(""), 1200);
+      }
+    } catch {
+      if (!silent) setSaveNotice("저장 실패");
+    }
+  }, []);
+
+  const continueGame = useCallback(() => {
+    try {
+      const payload = JSON.parse(localStorage.getItem(SAVE_KEY) || "null");
+      if (!payload?.state || payload.version !== 1) throw new Error("invalid save");
+      const base = makeState();
+      const loaded = payload.state;
+      stateRef.current = {
+        ...base,
+        ...loaded,
+        started: true,
+        over: false,
+        player: { ...base.player, ...loaded.player },
+        cooldowns: { ...base.cooldowns, ...loaded.cooldowns },
+        enemies: Array.isArray(loaded.enemies) ? loaded.enemies : [],
+        minions: Array.isArray(loaded.minions) ? loaded.minions : [],
+        soulOrbs: Array.isArray(loaded.soulOrbs) ? loaded.soulOrbs : [],
+      };
+      syncUi();
+      canvasRef.current?.focus();
+    } catch {
+      localStorage.removeItem(SAVE_KEY);
+      setHasSave(false);
+      setSaveNotice("저장 파일 오류");
+    }
+  }, [syncUi]);
 
   const useSkill = useCallback((skill) => {
     const s = stateRef.current;
@@ -522,12 +574,31 @@ export default function DemonGame() {
   }, [syncUi]);
 
   const start = useCallback(() => {
+    localStorage.removeItem(SAVE_KEY);
+    setHasSave(false);
     const fresh = makeState();
     fresh.started = true;
     stateRef.current = fresh;
     syncUi();
     canvasRef.current?.focus();
   }, [syncUi]);
+
+  useEffect(() => {
+    setHasSave(Boolean(localStorage.getItem(SAVE_KEY)));
+    const interval = window.setInterval(() => saveGame(true), 3000);
+    const beforeUnload = () => saveGame(true);
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("beforeunload", beforeUnload);
+    };
+  }, [saveGame]);
+
+  useEffect(() => {
+    if (!ui.over) return;
+    localStorage.removeItem(SAVE_KEY);
+    setHasSave(false);
+  }, [ui.over]);
 
   useEffect(() => {
     const down = (e) => {
@@ -690,7 +761,10 @@ export default function DemonGame() {
           <span>{ui.rest > 0 ? "마력 회복 중" : "무한 침공"}</span>
           <b>{ui.rest > 0 ? `REST ${Math.ceil(ui.rest)}` : `WAVE ${ui.wave} ∞`}</b>
         </div>
-        <button className="sound" onClick={() => setMuted(v => !v)} aria-label="소리 전환">{muted ? "소리 꺼짐" : "소리 켜짐"}</button>
+        <div className="top-actions">
+          {ui.started && !ui.over && <button className="save-button" onClick={() => saveGame(false)}>{saveNotice || "진행 저장"}</button>}
+          <button className="sound" onClick={() => setMuted(v => !v)} aria-label="소리 전환">{muted ? "소리 꺼짐" : "소리 켜짐"}</button>
+        </div>
       </header>
 
       <section className="game-wrap">
@@ -763,7 +837,14 @@ export default function DemonGame() {
             <p className="eyebrow">THE THRONE MUST STAND</p>
             <h1>이번엔 네가<br /><em>최종 보스</em>다</h1>
             <p className="lead">용사의 영혼을 모아 강화와 회복에 사용하며 왕좌를 지켜라.<br />10웨이브마다 강력한 용사왕이 등장한다.</p>
-            <button className="start-btn" onClick={start}><span>전투 시작</span><small>ENTER THE THRONE ROOM</small></button>
+            <div className="start-actions">
+              {hasSave && (
+                <button className="start-btn" onClick={continueGame}><span>이어하기</span><small>CONTINUE SAVED BATTLE</small></button>
+              )}
+              <button className={`start-btn ${hasSave ? "secondary" : ""}`} onClick={start}>
+                <span>{hasSave ? "새 게임" : "전투 시작"}</span><small>ENTER THE THRONE ROOM</small>
+              </button>
+            </div>
             <div className="quick-controls"><span><kbd>WASD</kbd> 이동</span><span><kbd>클릭</kbd> 암흑탄</span><span><kbd>R / 우클릭</kbd> 마왕검</span></div>
           </div>
         )}
