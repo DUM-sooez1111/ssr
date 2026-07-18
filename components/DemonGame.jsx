@@ -31,10 +31,12 @@ function makeState() {
     bossSpawnedWave: 0,
     kills: 0,
     score: 0,
+    souls: 0,
+    swordLevel: 0,
     shake: 0,
     flash: 0,
-    throneHp: 100,
     player: { x: 800, y: 265, hp: 100, angle: Math.PI / 2, hurt: 0 },
+    magicLevel: 0,
     cooldowns: { sword: 0, slash: 0, fire: 0, summon: 0, shot: 0 },
     enemies: [],
     shots: [],
@@ -42,6 +44,7 @@ function makeState() {
     particles: [],
     rings: [],
     swings: [],
+    soulOrbs: [],
   };
 }
 
@@ -180,7 +183,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
     if (s.cooldowns.shot > 0) return;
     s.cooldowns.shot = .28;
     const a = s.player.angle;
-    s.shots.push({ x: s.player.x + Math.cos(a) * 30, y: s.player.y + Math.sin(a) * 30, vx: Math.cos(a) * 620, vy: Math.sin(a) * 620, life: 1.35, damage: 24 });
+    s.shots.push({ x: s.player.x + Math.cos(a) * 30, y: s.player.y + Math.sin(a) * 30, vx: Math.cos(a) * 620, vy: Math.sin(a) * 620, life: 1.35, damage: 24 + s.magicLevel * 6 });
     addParticles(s, s.player.x, s.player.y, "#d574ff", 5, .4);
   };
   if (mouse.down || keys.has("KeyF")) shoot();
@@ -238,20 +241,13 @@ function updateGame(s, dt, keys, mouse, canvas) {
   for (const e of s.enemies) {
     e.attack -= dt;
     const dp = dist(e, s.player);
-    if (dp < 210 && e.y < 780) {
-      const a = Math.atan2(s.player.y - e.y, s.player.x - e.x);
-      if (dp > e.r + 27) { e.x += Math.cos(a) * e.speed * dt; e.y += Math.sin(a) * e.speed * dt; }
-      else if (e.attack <= 0) {
-        s.player.hp -= e.damage; s.player.hurt = .18; s.shake = 7; e.attack = 1.05;
-        addParticles(s, s.player.x, s.player.y, "#ff3333", 10, .7);
-      }
-    } else {
-      const a = Math.atan2(THRONE.y - e.y, THRONE.x - e.x);
-      if (dist(e, THRONE) > 80) { e.x += Math.cos(a) * e.speed * dt; e.y += Math.sin(a) * e.speed * dt; }
-      else if (e.attack <= 0) {
-        s.throneHp -= e.damage * .75; s.shake = 8; e.attack = 1.2;
-        addParticles(s, THRONE.x, THRONE.y, "#ff4632", 10, .8);
-      }
+    const a = Math.atan2(s.player.y - e.y, s.player.x - e.x);
+    if (dp > e.r + 27) {
+      e.x += Math.cos(a) * e.speed * dt;
+      e.y += Math.sin(a) * e.speed * dt;
+    } else if (e.attack <= 0) {
+      s.player.hp -= e.damage; s.player.hurt = .18; s.shake = 7; e.attack = 1.05;
+      addParticles(s, s.player.x, s.player.y, "#ff3333", 10, .7);
     }
   }
 
@@ -259,6 +255,11 @@ function updateGame(s, dt, keys, mouse, canvas) {
     if (e.hp <= 0 && !e.dead) {
       e.dead = true; s.kills++;
       s.score += e.type === "boss" ? 5000 + s.wave * 100 : e.type === "tank" ? 300 : e.type === "mage" ? 180 : 100;
+      const soulValue = e.type === "boss" ? 30 : e.type === "tank" ? 3 : e.type === "mage" ? 2 : 1;
+      s.soulOrbs.push({
+        x: e.x, y: e.y, value: soulValue, life: 14,
+        phase: Math.random() * Math.PI * 2,
+      });
       addParticles(s, e.x, e.y, "#ff8a38", 18, 1);
     }
   }
@@ -267,12 +268,29 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.minions = s.minions.filter(x => x.life > 0);
   for (const swing of s.swings) swing.life -= dt;
   s.swings = s.swings.filter(x => x.life > 0);
+  for (const soul of s.soulOrbs) {
+    soul.life -= dt;
+    soul.phase += dt * 5;
+    const d = dist(soul, s.player);
+    if (d < 230 || soul.life < 10) {
+      const a = Math.atan2(s.player.y - soul.y, s.player.x - soul.x);
+      const speed = 110 + (230 - Math.min(230, d)) * 1.8;
+      soul.x += Math.cos(a) * speed * dt;
+      soul.y += Math.sin(a) * speed * dt;
+    }
+    if (d < 30 && !soul.collected) {
+      soul.collected = true;
+      s.souls += soul.value;
+      addParticles(s, s.player.x, s.player.y, "#65eaff", 8 + soul.value, .65);
+    }
+  }
+  s.soulOrbs = s.soulOrbs.filter(x => x.life > 0 && !x.collected);
   for (const p of s.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96; p.life -= dt; }
   s.particles = s.particles.filter(p => p.life > 0);
   for (const r of s.rings) { r.r += 420 * dt; r.life -= dt; }
   s.rings = s.rings.filter(r => r.life > 0);
 
-  if (s.player.hp <= 0 || s.throneHp <= 0) { s.over = true; s.win = false; }
+  if (s.player.hp <= 0) { s.over = true; s.win = false; }
 }
 
 export default function DemonGame() {
@@ -280,7 +298,7 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, hp: 100, throne: 100, kills: 0, score: 0, cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, hp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
 
   const syncUi = useCallback(() => {
@@ -288,8 +306,8 @@ export default function DemonGame() {
     const boss = s.enemies.find(e => e.type === "boss");
     setUi({
       started: s.started, over: s.over, win: s.win, wave: s.wave,
-      hp: Math.max(0, s.player.hp), throne: Math.max(0, s.throneHp),
-      kills: s.kills, score: s.score, cooldowns: { ...s.cooldowns },
+      hp: Math.max(0, s.player.hp),
+      kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, cooldowns: { ...s.cooldowns },
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
     });
   }, []);
@@ -305,7 +323,7 @@ export default function DemonGame() {
       for (const e of s.enemies) {
         const targetAngle = Math.atan2(e.y - s.player.y, e.x - s.player.x);
         if (dist(s.player, e) < 165 + e.r && Math.abs(angleDelta(targetAngle, angle)) < .95) {
-          e.hp -= 52;
+          e.hp -= 52 + s.swordLevel * 14;
           e.x += Math.cos(angle) * 32;
           e.y += Math.sin(angle) * 32;
           addParticles(s, e.x, e.y, "#8ee6ff", 11, .8);
@@ -322,7 +340,7 @@ export default function DemonGame() {
     if (skill === "fire" && s.cooldowns.fire <= 0) {
       s.cooldowns.fire = 7;
       s.rings.push({ x: mouseRef.current.x, y: mouseRef.current.y, r: 15, life: .65, color: "#ff4f25" });
-      for (const e of s.enemies) if (dist(mouseRef.current, e) < 170) { e.hp -= 95; addParticles(s, e.x, e.y, "#ff4a22", 15, 1); }
+      for (const e of s.enemies) if (dist(mouseRef.current, e) < 170) { e.hp -= 95 + s.magicLevel * 18; addParticles(s, e.x, e.y, "#ff4a22", 15, 1); }
       s.shake = 10; s.flash = .55;
     }
     if (skill === "summon" && s.cooldowns.summon <= 0) {
@@ -334,6 +352,33 @@ export default function DemonGame() {
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .7, color: "#b889ff" });
     }
   }, []);
+
+  const buySoulItem = useCallback((item) => {
+    const s = stateRef.current;
+    if (!s.started || s.over) return;
+    if (item === "sword") {
+      const cost = 15 + s.swordLevel * 10;
+      if (s.souls < cost) return;
+      s.souls -= cost;
+      s.swordLevel++;
+      s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .7, color: "#72ddff" });
+      addParticles(s, s.player.x, s.player.y, "#72ddff", 18, .8);
+    }
+    if (item === "heal" && s.souls >= 12 && s.player.hp < 100) {
+      s.souls -= 12;
+      s.player.hp = Math.min(100, s.player.hp + 35);
+      addParticles(s, s.player.x, s.player.y, "#65f0a0", 16, .7);
+    }
+    if (item === "magic") {
+      const cost = 18 + s.magicLevel * 12;
+      if (s.souls < cost) return;
+      s.souls -= cost;
+      s.magicLevel++;
+      s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .75, color: "#c077ff" });
+      addParticles(s, s.player.x, s.player.y, "#c077ff", 18, .7);
+    }
+    syncUi();
+  }, [syncUi]);
 
   const start = useCallback(() => {
     const fresh = makeState();
@@ -351,12 +396,15 @@ export default function DemonGame() {
       if (e.code === "KeyR") useSkill("sword");
       if (e.code === "KeyQ") useSkill("fire");
       if (e.code === "KeyE") useSkill("summon");
+      if (e.code === "Digit1") buySoulItem("sword");
+      if (e.code === "Digit2") buySoulItem("heal");
+      if (e.code === "Digit3") buySoulItem("magic");
     };
     const up = (e) => keysRef.current.delete(e.code);
     window.addEventListener("keydown", down, { passive: false });
     window.addEventListener("keyup", up);
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
-  }, [useSkill]);
+  }, [buySoulItem, useSkill]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -430,6 +478,23 @@ export default function DemonGame() {
         ctx.stroke();
         ctx.restore();
       }
+      for (const soul of s.soulOrbs) {
+        const pulse = 1 + Math.sin(soul.phase) * .18;
+        ctx.save();
+        ctx.translate(soul.x, soul.y);
+        ctx.scale(pulse, pulse);
+        ctx.shadowColor = "#4defff";
+        ctx.shadowBlur = 22;
+        ctx.fillStyle = "#c9fbff";
+        ctx.beginPath();
+        ctx.arc(0, 0, soul.value >= 20 ? 15 : 8 + soul.value, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#31b9e5";
+        ctx.beginPath();
+        ctx.moveTo(0, -16); ctx.lineTo(7, 0); ctx.lineTo(0, 13); ctx.lineTo(-7, 0); ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
       for (const p of s.particles) {
         ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
         ctx.fillStyle = p.color;
@@ -484,13 +549,12 @@ export default function DemonGame() {
           <div className="bars">
             <div className="bar-row"><span>마왕</span><b>{Math.ceil(ui.hp)}</b></div>
             <div className="bar"><i className="hp" style={{ width: `${ui.hp}%` }} /></div>
-            <div className="bar-row throne-row"><span>왕좌</span><b>{Math.ceil(ui.throne)}</b></div>
-            <div className="bar throne"><i style={{ width: `${ui.throne}%` }} /></div>
           </div>
         </div>
 
         <div className="score-card">
           <span>처치 <b>{ui.kills}</b></span><i />
+          <span className="soul-score">영혼 <b>{ui.souls}</b></span><i />
           <span>악명 <b>{String(ui.score).padStart(5, "0")}</b></span>
         </div>
 
@@ -502,12 +566,27 @@ export default function DemonGame() {
           </div>
         )}
 
+        {ui.started && !ui.over && (
+          <div className="soul-shop">
+            <div className="shop-title"><span>영혼 상점</span><b>◈ {ui.souls}</b></div>
+            <button onClick={() => buySoulItem("sword")} disabled={ui.souls < 15 + ui.swordLevel * 10}>
+              <kbd>1</kbd><span>마왕검 강화 <small>LV.{ui.swordLevel}</small></span><b>{15 + ui.swordLevel * 10}</b>
+            </button>
+            <button onClick={() => buySoulItem("heal")} disabled={ui.souls < 12 || ui.hp >= 100}>
+              <kbd>2</kbd><span>마왕 회복 <small>+35</small></span><b>12</b>
+            </button>
+            <button onClick={() => buySoulItem("magic")} disabled={ui.souls < 18 + ui.magicLevel * 12}>
+              <kbd>3</kbd><span>마력 강화 <small>LV.{ui.magicLevel}</small></span><b>{18 + ui.magicLevel * 12}</b>
+            </button>
+          </div>
+        )}
+
         {!ui.started && (
           <div className="overlay">
             <div className="sigil">♛</div>
             <p className="eyebrow">THE THRONE MUST STAND</p>
             <h1>이번엔 네가<br /><em>최종 보스</em>다</h1>
-            <p className="lead">끝없이 밀려오는 용사들을 쓰러뜨리고 왕좌를 지켜라.<br />10웨이브마다 강력한 용사왕이 등장한다.</p>
+            <p className="lead">용사의 영혼을 모아 강화와 회복에 사용하며 왕좌를 지켜라.<br />10웨이브마다 강력한 용사왕이 등장한다.</p>
             <button className="start-btn" onClick={start}><span>전투 시작</span><small>ENTER THE THRONE ROOM</small></button>
             <div className="quick-controls"><span><kbd>WASD</kbd> 이동</span><span><kbd>클릭</kbd> 암흑탄</span><span><kbd>R / 우클릭</kbd> 마왕검</span></div>
           </div>
@@ -517,8 +596,8 @@ export default function DemonGame() {
           <div className="overlay result">
             <div className="sigil">{ui.win ? "♛" : "†"}</div>
             <p className="eyebrow">{ui.win ? "THE CASTLE ENDURES" : "THE THRONE HAS FALLEN"}</p>
-            <h1>{ui.win ? <>침공군을<br /><em>전멸시켰다</em></> : <>왕좌가<br /><em>함락되었다</em></>}</h1>
-            <p className="lead">도달 웨이브 {ui.wave} · 처치 {ui.kills} · 악명 {ui.score}</p>
+            <h1>{ui.win ? <>침공군을<br /><em>전멸시켰다</em></> : <>마왕이<br /><em>쓰러졌다</em></>}</h1>
+            <p className="lead">도달 웨이브 {ui.wave} · 영혼 {ui.souls} · 처치 {ui.kills} · 악명 {ui.score}</p>
             <button className="start-btn" onClick={start}><span>다시 도전</span><small>RECLAIM YOUR THRONE</small></button>
           </div>
         )}
@@ -541,7 +620,7 @@ export default function DemonGame() {
       </section>
 
       <footer>
-        <span><i className="red-dot" /> 왕좌가 파괴되면 패배합니다</span>
+        <span><i className="red-dot" /> 모든 적은 마왕만 공격합니다</span>
         <p><kbd>W A S D</kbd> 이동 <b>·</b> <kbd>F / 클릭</kbd> 암흑탄 <b>·</b> <kbd>R / 우클릭</kbd> 마왕검</p>
         <span className="map-credit">원본 이미지 기반 왕좌의 방</span>
       </footer>

@@ -73,6 +73,8 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: 
 }
 .score-card b { color: #f1dfba; margin-left: 5px; }
 .score-card i { width: 1px; height: 18px; background: #544839; }
+.score-card .soul-score { color: #5edff1; }
+.score-card .soul-score b { color: #c9fbff; text-shadow: 0 0 10px #42d9ef; }
 
 .boss-hud {
   position: absolute; z-index: 4; left: 50%; top: 3.2%; transform: translateX(-50%);
@@ -84,6 +86,26 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: 
 .boss-hud b { display: block; color: #f4d08b; font-family: "Black Han Sans", sans-serif; font-size: 16px; font-weight: 400; letter-spacing: .08em; margin: 2px 0 5px; }
 .boss-hud div { height: 8px; padding: 2px; background: #0b0808; border: 1px solid #8d3929; transform: skewX(-12deg); }
 .boss-hud i { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #8b130f, #ff4931); box-shadow: 0 0 13px #f33425; transition: width .12s linear; }
+
+.soul-shop {
+  position: absolute; z-index: 4; left: 2.2%; bottom: 3.2%; width: 180px;
+  padding: 8px; background: rgba(5,12,15,.9); border: 1px solid rgba(84,221,239,.4);
+  box-shadow: 0 8px 28px #000, inset 0 0 20px rgba(52,205,229,.06);
+  backdrop-filter: blur(8px);
+}
+.shop-title { display: flex; justify-content: space-between; align-items: center; padding: 0 3px 7px; }
+.shop-title span { color: #79ddeb; font-size: 9px; font-weight: 900; letter-spacing: .14em; }
+.shop-title b { color: #d2fbff; font-size: 12px; text-shadow: 0 0 10px #44dcec; }
+.soul-shop button {
+  width: 100%; display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 5px;
+  padding: 6px 7px; color: #d8e8e8; background: #101719; border: 0; border-top: 1px solid #273a3d;
+  cursor: pointer; text-align: left;
+}
+.soul-shop button:hover:not(:disabled) { background: #173036; color: #fff; }
+.soul-shop button:disabled { opacity: .42; cursor: not-allowed; }
+.soul-shop button span { display: grid; font-size: 10px; font-weight: 700; }
+.soul-shop button small { color: #6e9297; font-size: 7px; margin-top: 1px; }
+.soul-shop button > b { color: #69dbea; font-size: 10px; }
 
 .overlay {
   position: absolute; z-index: 5; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -163,6 +185,11 @@ footer b { color: #403930; margin: 0 7px; }
   .boss-hud span { display: none; }
   .boss-hud b { font-size: 9px; margin: 0 0 3px; }
   .boss-hud div { height: 6px; }
+  .soul-shop { left: 1.5%; bottom: 2%; width: auto; padding: 4px; }
+  .shop-title { padding-bottom: 3px; }
+  .shop-title span { display: none; }
+  .soul-shop button { grid-template-columns: 18px auto; padding: 3px 4px; }
+  .soul-shop button span, .soul-shop button > b { display: none; }
   .skill { grid-template-columns: 24px; min-width: 50px; min-height: 46px; padding: 4px 8px; }
   .skill-icon { font-size: 22px; }
   .skill-copy { display: none; }
