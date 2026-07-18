@@ -328,23 +328,36 @@ function updateGame(s, dt, keys, mouse, canvas) {
 
   for (const m of s.minions) {
     m.life -= dt;
-    let target = null, best = 240;
+    let target = null;
+    let targetDistance = Infinity;
+    let bestScore = Infinity;
     for (const e of s.enemies) {
       const d = dist(m, e);
-      if (d < best) { best = d; target = e; }
+      if (e.hp <= 0 || d > 320) continue;
+      const score = d - (e.type === "knight" ? 110 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        targetDistance = d;
+        target = e;
+      }
     }
     if (target) {
       const a = Math.atan2(target.y - m.y, target.x - m.x);
       const minionSpeed = 125 + m.level * 8;
       m.x += Math.cos(a) * minionSpeed * dt; m.y += Math.sin(a) * minionSpeed * dt;
       m.attack -= dt;
-      if (best < 35 + m.level * 2 && m.attack <= 0) {
-        hurtEnemy(target, 22 + m.level * 10, "#90e2b1");
-        m.attack = Math.max(.38, .75 - m.level * .035);
+      if (targetDistance < 35 + m.level * 2 && m.attack <= 0) {
+        const knightAdvantage = target.type === "knight";
+        const damage = knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10;
+        hurtEnemy(target, damage, knightAdvantage ? "#f5d56a" : "#90e2b1");
+        m.attack = knightAdvantage ? .55 : Math.max(.38, .75 - m.level * .035);
       }
     } else {
       const a = Math.atan2(s.player.y - m.y, s.player.x - m.x);
-      if (best > 70) { m.x += Math.cos(a) * 70 * dt; m.y += Math.sin(a) * 70 * dt; }
+      if (dist(m, s.player) > 70) {
+        m.x += Math.cos(a) * 70 * dt;
+        m.y += Math.sin(a) * 70 * dt;
+      }
     }
     keepInArena(m);
   }
