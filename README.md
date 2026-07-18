@@ -60,3 +60,5 @@ pnpm start
 - vinext / Vite
 - HTML Canvas
 - ChatGPT Sites
+
+적 캐릭터는 원본 맵의 3D 복셀 스타일을 참고해 제작한 투명 스프라이트 아틀라스를 사용합니다.
