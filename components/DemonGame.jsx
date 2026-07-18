@@ -41,6 +41,7 @@ function makeState() {
     cooldowns: { sword: 0, slash: 0, fire: 0, summon: 0, shot: 0 },
     enemies: [],
     shots: [],
+    enemyShots: [],
     minions: [],
     particles: [],
     rings: [],
@@ -128,6 +129,22 @@ function drawEnemy(ctx, e) {
     ctx.beginPath(); ctx.arc(-12, -7, 6, 0, Math.PI * 2); ctx.arc(12, -7, 6, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "#f2d78c"; ctx.lineWidth = 6;
     ctx.beginPath(); ctx.moveTo(-18, 12); ctx.quadraticCurveTo(0, 26, 18, 12); ctx.stroke();
+  } else if (e.type === "archer") {
+    ctx.fillStyle = "#3e7d46";
+    ctx.beginPath(); ctx.moveTo(-18, -8); ctx.lineTo(0, -31); ctx.lineTo(18, -8); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#d8ad65"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(18, 2, 16, -1.3, 1.3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(22, -14); ctx.lineTo(22, 18); ctx.stroke();
+  } else if (e.type === "assassin") {
+    ctx.fillStyle = "#342342";
+    ctx.beginPath(); ctx.arc(0, -4, e.r + 3, Math.PI, 0); ctx.fill();
+    ctx.strokeStyle = "#d9c8ed"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-20, 10); ctx.lineTo(-7, -2); ctx.moveTo(20, 10); ctx.lineTo(7, -2); ctx.stroke();
+    ctx.fillStyle = "#cf4cff"; ctx.fillRect(-8, -8, 5, 3); ctx.fillRect(3, -8, 5, 3);
+  } else if (e.type === "paladin") {
+    ctx.fillStyle = "#e2bf55";
+    ctx.beginPath(); ctx.moveTo(-23, -22); ctx.lineTo(0, -32); ctx.lineTo(23, -22); ctx.lineTo(20, 20); ctx.lineTo(0, 31); ctx.lineTo(-20, 20); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#f4e9be"; ctx.fillRect(-4, -23, 8, 43); ctx.fillRect(-17, -8, 34, 8);
   } else if (e.type === "mage") {
     ctx.fillStyle = "#3c67d5";
     ctx.beginPath(); ctx.moveTo(-17, -10); ctx.lineTo(0, -35); ctx.lineTo(17, -10); ctx.closePath(); ctx.fill();
@@ -191,16 +208,27 @@ function updateGame(s, dt, keys, mouse, canvas) {
 
   if (s.spawnTimer <= 0) {
     const count = Math.min(4, 1 + Math.floor(s.wave / 5));
+    const availableTypes = ["knight"];
+    if (s.wave >= 2) availableTypes.push("mage");
+    if (s.wave >= 3) availableTypes.push("tank");
+    if (s.wave >= 4) availableTypes.push("archer");
+    if (s.wave >= 6) availableTypes.push("assassin");
+    if (s.wave >= 8) availableTypes.push("paladin");
     for (let i = 0; i < count; i++) {
-      const roll = Math.random();
-      const type = s.wave >= 3 && roll > .78 ? "tank" : s.wave >= 2 && roll > .55 ? "mage" : "knight";
-      const maxHp = type === "tank" ? 150 + s.wave * 18 : type === "mage" ? 68 + s.wave * 9 : 84 + s.wave * 12;
+      const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+      const stats = {
+        knight: { hp: 84 + s.wave * 12, r: 20, speed: 78, damage: 10, color: "#3268bb" },
+        mage: { hp: 68 + s.wave * 9, r: 20, speed: 64, damage: 10, color: "#426ee9" },
+        tank: { hp: 150 + s.wave * 18, r: 25, speed: 45, damage: 18, color: "#bd8435" },
+        archer: { hp: 72 + s.wave * 10, r: 19, speed: 68, damage: 9 + Math.floor(s.wave * .35), color: "#3f8b4f" },
+        assassin: { hp: 62 + s.wave * 8, r: 17, speed: 136, damage: 16 + Math.floor(s.wave * .4), color: "#633477" },
+        paladin: { hp: 225 + s.wave * 22, r: 28, speed: 42, damage: 24 + Math.floor(s.wave * .45), color: "#d1a83f" },
+      }[type];
       s.enemies.push({
         x: LANES[Math.floor(Math.random() * LANES.length)] + (Math.random() - .5) * 45,
-        y: 870 + i * 35, r: type === "tank" ? 25 : 20,
-        hp: maxHp, maxHp, speed: type === "tank" ? 45 : type === "mage" ? 64 : 78,
-        damage: type === "tank" ? 18 : 10, type,
-        color: type === "mage" ? "#426ee9" : type === "tank" ? "#bd8435" : "#3268bb",
+        y: 870 + i * 35, r: stats.r,
+        hp: stats.hp, maxHp: stats.hp, speed: stats.speed,
+        damage: stats.damage, type, color: stats.color,
         attack: 0,
       });
     }
@@ -218,6 +246,19 @@ function updateGame(s, dt, keys, mouse, canvas) {
       if (shot.life > 0 && dist(shot, e) < e.r + 10) {
         hurtEnemy(e, shot.damage, "#d87cff"); shot.life = 0;
       }
+    }
+  }
+
+  for (const shot of s.enemyShots) {
+    shot.x += shot.vx * dt;
+    shot.y += shot.vy * dt;
+    shot.life -= dt;
+    if (shot.life > 0 && dist(shot, s.player) < 25) {
+      shot.life = 0;
+      s.player.hp -= shot.damage;
+      s.player.hurt = .18;
+      s.shake = 5;
+      addParticles(s, s.player.x, s.player.y, "#e9bc72", 9, .55);
     }
   }
 
@@ -247,7 +288,25 @@ function updateGame(s, dt, keys, mouse, canvas) {
     e.attack -= dt;
     const dp = dist(e, s.player);
     const a = Math.atan2(s.player.y - e.y, s.player.x - e.x);
-    if (dp > e.r + 27) {
+    if (e.type === "archer") {
+      if (dp > 340) {
+        e.x += Math.cos(a) * e.speed * dt;
+        e.y += Math.sin(a) * e.speed * dt;
+      } else if (dp < 225) {
+        e.x -= Math.cos(a) * e.speed * .75 * dt;
+        e.y -= Math.sin(a) * e.speed * .75 * dt;
+      }
+      if (dp < 480 && e.attack <= 0) {
+        const arrowSpeed = 340;
+        s.enemyShots.push({
+          x: e.x, y: e.y, vx: Math.cos(a) * arrowSpeed, vy: Math.sin(a) * arrowSpeed,
+          life: 2.1, damage: e.damage, type: "arrow",
+        });
+        e.attack = 1.55;
+      }
+      e.x = clamp(e.x, 270, 1330);
+      e.y = clamp(e.y, 180, 855);
+    } else if (dp > e.r + 27) {
       e.x += Math.cos(a) * e.speed * dt;
       e.y += Math.sin(a) * e.speed * dt;
     } else if (e.attack <= 0) {
@@ -259,8 +318,17 @@ function updateGame(s, dt, keys, mouse, canvas) {
   for (const e of s.enemies) {
     if (e.hp <= 0 && !e.dead) {
       e.dead = true; s.kills++;
-      s.score += e.type === "boss" ? 5000 + s.wave * 100 : e.type === "tank" ? 300 : e.type === "mage" ? 180 : 100;
-      const soulValue = e.type === "boss" ? 30 : e.type === "tank" ? 3 : e.type === "mage" ? 2 : 1;
+      const rewards = {
+        boss: { score: 5000 + s.wave * 100, souls: 30 },
+        paladin: { score: 420, souls: 4 },
+        assassin: { score: 240, souls: 2 },
+        archer: { score: 190, souls: 2 },
+        tank: { score: 300, souls: 3 },
+        mage: { score: 180, souls: 2 },
+        knight: { score: 100, souls: 1 },
+      }[e.type];
+      s.score += rewards.score;
+      const soulValue = rewards.souls;
       s.soulOrbs.push({
         x: e.x, y: e.y, value: soulValue, life: 14,
         phase: Math.random() * Math.PI * 2,
@@ -270,6 +338,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
   }
   s.enemies = s.enemies.filter(e => !e.dead);
   s.shots = s.shots.filter(x => x.life > 0);
+  s.enemyShots = s.enemyShots.filter(x => x.life > 0);
   s.minions = s.minions.filter(x => x.life > 0);
   for (const swing of s.swings) swing.life -= dt;
   s.swings = s.swings.filter(x => x.life > 0);
@@ -471,6 +540,19 @@ export default function DemonGame() {
         ctx.shadowColor = "#d879ff"; ctx.shadowBlur = 18;
         drawDiamond(ctx, shot.x, shot.y, 9, "#f1c2ff", "#7d2caf");
         ctx.shadowBlur = 0;
+      }
+      for (const shot of s.enemyShots) {
+        ctx.save();
+        ctx.translate(shot.x, shot.y);
+        ctx.rotate(Math.atan2(shot.vy, shot.vx));
+        ctx.shadowColor = "#f2c26c";
+        ctx.shadowBlur = 9;
+        ctx.strokeStyle = "#f0d39a";
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(11, 0); ctx.stroke();
+        ctx.fillStyle = "#d8943e";
+        ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(5, -5); ctx.lineTo(5, 5); ctx.closePath(); ctx.fill();
+        ctx.restore();
       }
       for (const m of s.minions) {
         ctx.save(); ctx.translate(m.x, m.y);
