@@ -165,6 +165,8 @@ kbd {
   backdrop-filter: blur(8px); box-shadow: 0 6px 24px #000;
 }
 .skill:hover { border-color: var(--skill); background: rgba(25,18,16,.94); transform: translateY(-2px); }
+.skill:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.45); }
+.skill:disabled:hover { transform: none; border-color: color-mix(in srgb, var(--skill), #111 60%); background: rgba(8,7,8,.88); }
 .skill kbd { position: absolute; top: -8px; left: -5px; z-index: 2; }
 .skill-icon { font-size: 27px; color: var(--skill); text-align: center; text-shadow: 0 0 15px var(--skill); }
 .skill-copy { display: grid; padding-left: 8px; border-left: 1px solid #3b332a; }
