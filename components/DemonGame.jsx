@@ -640,8 +640,21 @@ export default function DemonGame() {
 
       ctx.save();
       if (s.shake > 0) ctx.translate((Math.random() - .5) * s.shake, (Math.random() - .5) * s.shake);
-      if (img.complete) ctx.drawImage(img, 0, 0, W, H);
-      else { ctx.fillStyle = "#142029"; ctx.fillRect(0, 0, W, H); }
+      if (img.complete && img.naturalWidth) {
+        const sourceHeight = img.naturalWidth * H / W;
+        const sourceY = Math.min(
+          img.naturalHeight - sourceHeight,
+          img.naturalHeight * .07,
+        );
+        ctx.drawImage(
+          img,
+          0, sourceY, img.naturalWidth, sourceHeight,
+          0, 0, W, H,
+        );
+      } else {
+        ctx.fillStyle = "#142029";
+        ctx.fillRect(0, 0, W, H);
+      }
       const shade = ctx.createLinearGradient(0, 0, 0, H);
       shade.addColorStop(0, "rgba(4,2,9,.14)");
       shade.addColorStop(.32, "rgba(9,3,10,.28)");
