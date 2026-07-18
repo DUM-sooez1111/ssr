@@ -74,6 +74,17 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: 
 .score-card b { color: #f1dfba; margin-left: 5px; }
 .score-card i { width: 1px; height: 18px; background: #544839; }
 
+.boss-hud {
+  position: absolute; z-index: 4; left: 50%; top: 3.2%; transform: translateX(-50%);
+  width: min(430px, 38%); padding: 8px 14px 10px; text-align: center;
+  background: linear-gradient(90deg, transparent, rgba(20,4,5,.9) 13%, rgba(20,4,5,.9) 87%, transparent);
+  filter: drop-shadow(0 5px 18px #000);
+}
+.boss-hud span { display: block; color: #ef5943; font-size: 8px; font-weight: 900; letter-spacing: .3em; }
+.boss-hud b { display: block; color: #f4d08b; font-family: "Black Han Sans", sans-serif; font-size: 16px; font-weight: 400; letter-spacing: .08em; margin: 2px 0 5px; }
+.boss-hud div { height: 8px; padding: 2px; background: #0b0808; border: 1px solid #8d3929; transform: skewX(-12deg); }
+.boss-hud i { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #8b130f, #ff4931); box-shadow: 0 0 13px #f33425; transition: width .12s linear; }
+
 .overlay {
   position: absolute; z-index: 5; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; background: radial-gradient(circle at 50% 43%, rgba(73,13,12,.36), rgba(3,3,4,.78) 65%);
@@ -148,6 +159,10 @@ footer b { color: #403930; margin: 0 7px; }
   .bars { width: 120px; }
   .bar-row { font-size: 9px; }
   .score-card { display: none; }
+  .boss-hud { width: 38%; top: 2%; padding: 4px 8px 6px; }
+  .boss-hud span { display: none; }
+  .boss-hud b { font-size: 9px; margin: 0 0 3px; }
+  .boss-hud div { height: 6px; }
   .skill { grid-template-columns: 24px; min-width: 50px; min-height: 46px; padding: 4px 8px; }
   .skill-icon { font-size: 22px; }
   .skill-copy { display: none; }

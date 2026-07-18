@@ -9,13 +9,15 @@ const LANES = [515, 650, 800, 950, 1085];
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 const SKILLS = [
-  { key: "SPACE", name: "파멸의 낫", sub: "근접 · 2초", color: "#f3d18a" },
-  { key: "Q", name: "지옥불 폭발", sub: "범위 · 7초", color: "#ff5b28" },
-  { key: "E", name: "망자 소환", sub: "부하 · 12초", color: "#b889ff" },
+  { id: "sword", key: "R / 우클릭", name: "마왕검 휘두르기", sub: "전방 · 0.8초", color: "#73d7ff", icon: "⚔" },
+  { id: "slash", key: "SPACE", name: "파멸의 낫", sub: "근접 · 2초", color: "#f3d18a", icon: "☾" },
+  { id: "fire", key: "Q", name: "지옥불 폭발", sub: "범위 · 7초", color: "#ff5b28", icon: "♨" },
+  { id: "summon", key: "E", name: "망자 소환", sub: "부하 · 12초", color: "#b889ff", icon: "♟" },
 ];
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 
 function makeState() {
   return {
@@ -26,18 +28,20 @@ function makeState() {
     wave: 1,
     waveTimer: 0,
     spawnTimer: 0,
+    bossSpawnedWave: 0,
     kills: 0,
     score: 0,
     shake: 0,
     flash: 0,
     throneHp: 100,
     player: { x: 800, y: 265, hp: 100, angle: Math.PI / 2, hurt: 0 },
-    cooldowns: { slash: 0, fire: 0, summon: 0, shot: 0 },
+    cooldowns: { sword: 0, slash: 0, fire: 0, summon: 0, shot: 0 },
     enemies: [],
     shots: [],
     minions: [],
     particles: [],
     rings: [],
+    swings: [],
   };
 }
 
@@ -100,7 +104,7 @@ function drawEnemy(ctx, e) {
   ctx.translate(e.x, e.y);
   ctx.shadowColor = e.color;
   ctx.shadowBlur = 8;
-  ctx.fillStyle = "#d7d4c9";
+  ctx.fillStyle = e.type === "boss" ? "#351016" : "#d7d4c9";
   ctx.beginPath();
   ctx.arc(0, 0, e.r, 0, Math.PI * 2);
   ctx.fill();
@@ -110,16 +114,27 @@ function drawEnemy(ctx, e) {
   ctx.fillStyle = "#151922";
   ctx.fillRect(-8, -8, 5, 4);
   ctx.fillRect(3, -8, 5, 4);
-  if (e.type === "mage") {
+  if (e.type === "boss") {
+    ctx.fillStyle = "#e2ad45";
+    ctx.beginPath();
+    ctx.moveTo(-30, -20); ctx.lineTo(-45, -48); ctx.lineTo(-12, -32);
+    ctx.lineTo(0, -55); ctx.lineTo(12, -32); ctx.lineTo(45, -48);
+    ctx.lineTo(30, -20); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#ff3b26";
+    ctx.beginPath(); ctx.arc(-12, -7, 6, 0, Math.PI * 2); ctx.arc(12, -7, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#f2d78c"; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(-18, 12); ctx.quadraticCurveTo(0, 26, 18, 12); ctx.stroke();
+  } else if (e.type === "mage") {
     ctx.fillStyle = "#3c67d5";
     ctx.beginPath(); ctx.moveTo(-17, -10); ctx.lineTo(0, -35); ctx.lineTo(17, -10); ctx.closePath(); ctx.fill();
   } else if (e.type === "tank") {
     ctx.strokeStyle = "#e4b94c"; ctx.lineWidth = 5; ctx.strokeRect(-20, -22, 40, 40);
   }
+  const barWidth = e.type === "boss" ? 100 : 40;
   ctx.fillStyle = "#1a1515";
-  ctx.fillRect(-20, -e.r - 13, 40, 5);
+  ctx.fillRect(-barWidth / 2, -e.r - 17, barWidth, e.type === "boss" ? 9 : 5);
   ctx.fillStyle = "#e33d32";
-  ctx.fillRect(-20, -e.r - 13, 40 * (e.hp / e.maxHp), 5);
+  ctx.fillRect(-barWidth / 2, -e.r - 17, barWidth * (e.hp / e.maxHp), e.type === "boss" ? 9 : 5);
   ctx.restore();
 }
 
@@ -133,11 +148,25 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.player.hurt = Math.max(0, s.player.hurt - dt);
   for (const k in s.cooldowns) s.cooldowns[k] = Math.max(0, s.cooldowns[k] - dt);
 
-  if (s.waveTimer > 24 && s.wave < 5) {
+  if (s.waveTimer > 24) {
     s.wave++;
     s.waveTimer = 0;
     s.flash = 1;
     s.rings.push({ x: THRONE.x, y: THRONE.y, r: 20, life: 1.5, color: "#ffcc52" });
+  }
+
+  if (s.wave % 10 === 0 && s.bossSpawnedWave !== s.wave) {
+    const maxHp = 1200 + s.wave * 110;
+    s.enemies.push({
+      x: 800, y: 870, r: 42, hp: maxHp, maxHp,
+      speed: 38 + Math.min(24, s.wave * .45),
+      damage: 34 + Math.floor(s.wave * .7),
+      type: "boss", color: "#ff3425", attack: 0,
+    });
+    s.bossSpawnedWave = s.wave;
+    s.flash = 1.4;
+    s.shake = 14;
+    s.rings.push({ x: 800, y: 790, r: 30, life: 1.4, color: "#ff3425" });
   }
 
   const moveX = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
@@ -156,8 +185,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
   };
   if (mouse.down || keys.has("KeyF")) shoot();
 
-  if (s.spawnTimer <= 0 && !(s.wave === 5 && s.waveTimer > 24)) {
-    const count = 1 + Math.floor(s.wave / 3);
+  if (s.spawnTimer <= 0) {
+    const count = Math.min(4, 1 + Math.floor(s.wave / 5));
     for (let i = 0; i < count; i++) {
       const roll = Math.random();
       const type = s.wave >= 3 && roll > .78 ? "tank" : s.wave >= 2 && roll > .55 ? "mage" : "knight";
@@ -171,7 +200,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
         attack: 0,
       });
     }
-    s.spawnTimer = Math.max(.65, 2.05 - s.wave * .22);
+    s.spawnTimer = Math.max(.58, 2.05 - s.wave * .095);
   }
 
   const hurtEnemy = (e, dmg, color = "#ff653d") => {
@@ -228,20 +257,22 @@ function updateGame(s, dt, keys, mouse, canvas) {
 
   for (const e of s.enemies) {
     if (e.hp <= 0 && !e.dead) {
-      e.dead = true; s.kills++; s.score += e.type === "tank" ? 300 : e.type === "mage" ? 180 : 100;
+      e.dead = true; s.kills++;
+      s.score += e.type === "boss" ? 5000 + s.wave * 100 : e.type === "tank" ? 300 : e.type === "mage" ? 180 : 100;
       addParticles(s, e.x, e.y, "#ff8a38", 18, 1);
     }
   }
   s.enemies = s.enemies.filter(e => !e.dead);
   s.shots = s.shots.filter(x => x.life > 0);
   s.minions = s.minions.filter(x => x.life > 0);
+  for (const swing of s.swings) swing.life -= dt;
+  s.swings = s.swings.filter(x => x.life > 0);
   for (const p of s.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96; p.life -= dt; }
   s.particles = s.particles.filter(p => p.life > 0);
   for (const r of s.rings) { r.r += 420 * dt; r.life -= dt; }
   s.rings = s.rings.filter(r => r.life > 0);
 
   if (s.player.hp <= 0 || s.throneHp <= 0) { s.over = true; s.win = false; }
-  if (s.wave === 5 && s.waveTimer > 24 && s.enemies.length === 0) { s.over = true; s.win = true; }
 }
 
 export default function DemonGame() {
@@ -249,21 +280,39 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, hp: 100, throne: 100, kills: 0, score: 0, cooldowns: {} });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, hp: 100, throne: 100, kills: 0, score: 0, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
+    const boss = s.enemies.find(e => e.type === "boss");
     setUi({
       started: s.started, over: s.over, win: s.win, wave: s.wave,
       hp: Math.max(0, s.player.hp), throne: Math.max(0, s.throneHp),
       kills: s.kills, score: s.score, cooldowns: { ...s.cooldowns },
+      boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
     });
   }, []);
 
   const useSkill = useCallback((skill) => {
     const s = stateRef.current;
     if (!s.started || s.over) return;
+    if (skill === "sword" && s.cooldowns.sword <= 0) {
+      s.cooldowns.sword = .75;
+      const angle = Math.atan2(mouseRef.current.y - s.player.y, mouseRef.current.x - s.player.x);
+      s.player.angle = angle;
+      s.swings.push({ x: s.player.x, y: s.player.y, angle, life: .26, maxLife: .26 });
+      for (const e of s.enemies) {
+        const targetAngle = Math.atan2(e.y - s.player.y, e.x - s.player.x);
+        if (dist(s.player, e) < 165 + e.r && Math.abs(angleDelta(targetAngle, angle)) < .95) {
+          e.hp -= 52;
+          e.x += Math.cos(angle) * 32;
+          e.y += Math.sin(angle) * 32;
+          addParticles(s, e.x, e.y, "#8ee6ff", 11, .8);
+        }
+      }
+      s.shake = 4;
+    }
     if (skill === "slash" && s.cooldowns.slash <= 0) {
       s.cooldowns.slash = 2;
       s.rings.push({ x: s.player.x, y: s.player.y, r: 20, life: .42, color: "#f8d78e" });
@@ -299,6 +348,7 @@ export default function DemonGame() {
       keysRef.current.add(e.code);
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
       if (e.code === "Space") useSkill("slash");
+      if (e.code === "KeyR") useSkill("sword");
       if (e.code === "KeyQ") useSkill("fire");
       if (e.code === "KeyE") useSkill("summon");
     };
@@ -362,6 +412,24 @@ export default function DemonGame() {
       }
       for (const e of s.enemies) drawEnemy(ctx, e);
       if (s.started) drawPlayer(ctx, s.player, s.time);
+      for (const swing of s.swings) {
+        const alpha = clamp(swing.life / swing.maxLife, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = "#7fe4ff";
+        ctx.shadowBlur = 24;
+        ctx.strokeStyle = "#d9f8ff";
+        ctx.lineWidth = 7 + alpha * 12;
+        ctx.beginPath();
+        ctx.arc(swing.x, swing.y, 115, swing.angle - .95, swing.angle + .95);
+        ctx.stroke();
+        ctx.strokeStyle = "#61cfff";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(swing.x, swing.y, 138, swing.angle - .78, swing.angle + .78);
+        ctx.stroke();
+        ctx.restore();
+      }
       for (const p of s.particles) {
         ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
         ctx.fillStyle = p.color;
@@ -392,7 +460,7 @@ export default function DemonGame() {
           <span className="brand-mark">♛</span>
           <div><strong>마왕의 최종 방어선</strong><small>DEMON KING&apos;S LAST STAND</small></div>
         </div>
-        <div className="wave-label"><span>침공 단계</span><b>WAVE {ui.wave} / 5</b></div>
+        <div className="wave-label"><span>무한 침공</span><b>WAVE {ui.wave} ∞</b></div>
         <button className="sound" onClick={() => setMuted(v => !v)} aria-label="소리 전환">{muted ? "소리 꺼짐" : "소리 켜짐"}</button>
       </header>
 
@@ -400,8 +468,12 @@ export default function DemonGame() {
         <canvas
           ref={canvasRef} width={W} height={H} tabIndex={0}
           onMouseMove={canvasPoint}
-          onMouseDown={(e) => { canvasPoint(e); mouseRef.current.down = true; }}
-          onMouseUp={() => { mouseRef.current.down = false; }}
+          onMouseDown={(e) => {
+            canvasPoint(e);
+            if (e.button === 2) useSkill("sword");
+            else mouseRef.current.down = true;
+          }}
+          onMouseUp={(e) => { if (e.button !== 2) mouseRef.current.down = false; }}
           onMouseLeave={() => { mouseRef.current.down = false; }}
           onContextMenu={(e) => e.preventDefault()}
           aria-label="마왕의 최종 방어선 게임 화면"
@@ -422,14 +494,22 @@ export default function DemonGame() {
           <span>악명 <b>{String(ui.score).padStart(5, "0")}</b></span>
         </div>
 
+        {ui.boss && (
+          <div className="boss-hud">
+            <span>10웨이브 강적</span>
+            <b>심연의 용사왕</b>
+            <div><i style={{ width: `${ui.boss.hp / ui.boss.maxHp * 100}%` }} /></div>
+          </div>
+        )}
+
         {!ui.started && (
           <div className="overlay">
             <div className="sigil">♛</div>
             <p className="eyebrow">THE THRONE MUST STAND</p>
             <h1>이번엔 네가<br /><em>최종 보스</em>다</h1>
-            <p className="lead">성문을 뚫고 들어온 용사들을 쓰러뜨리고<br />5번의 침공으로부터 왕좌를 지켜라.</p>
+            <p className="lead">끝없이 밀려오는 용사들을 쓰러뜨리고 왕좌를 지켜라.<br />10웨이브마다 강력한 용사왕이 등장한다.</p>
             <button className="start-btn" onClick={start}><span>전투 시작</span><small>ENTER THE THRONE ROOM</small></button>
-            <div className="quick-controls"><span><kbd>WASD</kbd> 이동</span><span><kbd>마우스</kbd> 조준 · 공격</span><span><kbd>Q E</kbd> 스킬</span></div>
+            <div className="quick-controls"><span><kbd>WASD</kbd> 이동</span><span><kbd>클릭</kbd> 암흑탄</span><span><kbd>R / 우클릭</kbd> 마왕검</span></div>
           </div>
         )}
 
@@ -438,20 +518,19 @@ export default function DemonGame() {
             <div className="sigil">{ui.win ? "♛" : "†"}</div>
             <p className="eyebrow">{ui.win ? "THE CASTLE ENDURES" : "THE THRONE HAS FALLEN"}</p>
             <h1>{ui.win ? <>침공군을<br /><em>전멸시켰다</em></> : <>왕좌가<br /><em>함락되었다</em></>}</h1>
-            <p className="lead">처치 {ui.kills} · 악명 {ui.score}</p>
+            <p className="lead">도달 웨이브 {ui.wave} · 처치 {ui.kills} · 악명 {ui.score}</p>
             <button className="start-btn" onClick={start}><span>다시 도전</span><small>RECLAIM YOUR THRONE</small></button>
           </div>
         )}
 
         {ui.started && !ui.over && (
           <div className="skillbar">
-            {SKILLS.map((x, i) => {
-              const id = i === 0 ? "slash" : i === 1 ? "fire" : "summon";
-              const cd = ui.cooldowns[id] || 0;
+            {SKILLS.map((x) => {
+              const cd = ui.cooldowns[x.id] || 0;
               return (
-                <button key={x.key} className="skill" onClick={() => useSkill(id)} style={{ "--skill": x.color }}>
+                <button key={x.id} className="skill" onClick={() => useSkill(x.id)} style={{ "--skill": x.color }}>
                   <kbd>{x.key}</kbd>
-                  <span className="skill-icon">{i === 0 ? "☾" : i === 1 ? "♨" : "♟"}</span>
+                  <span className="skill-icon">{x.icon}</span>
                   <span className="skill-copy"><b>{x.name}</b><small>{x.sub}</small></span>
                   {cd > 0 && <i className="cooldown">{cd.toFixed(1)}</i>}
                 </button>
@@ -463,7 +542,7 @@ export default function DemonGame() {
 
       <footer>
         <span><i className="red-dot" /> 왕좌가 파괴되면 패배합니다</span>
-        <p><kbd>W A S D</kbd> 이동 <b>·</b> <kbd>F / 클릭</kbd> 암흑탄 <b>·</b> <kbd>SPACE</kbd> 파멸의 낫</p>
+        <p><kbd>W A S D</kbd> 이동 <b>·</b> <kbd>F / 클릭</kbd> 암흑탄 <b>·</b> <kbd>R / 우클릭</kbd> 마왕검</p>
         <span className="map-credit">원본 이미지 기반 왕좌의 방</span>
       </footer>
     </main>
