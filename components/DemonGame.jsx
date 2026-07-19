@@ -89,9 +89,29 @@ function drawDiamond(ctx, x, y, r, fill, stroke = "#111") {
   ctx.stroke();
 }
 
-function drawPlayer(ctx, p, time) {
+function drawPlayer(ctx, p, time, sprite) {
   ctx.save();
   ctx.translate(p.x, p.y + Math.sin(time * 5) * 2);
+  if (sprite?.complete && sprite.naturalWidth > 0) {
+    const size = 158;
+    ctx.fillStyle = "rgba(0,0,0,.55)";
+    ctx.beginPath();
+    ctx.ellipse(0, 27, 48, 13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = p.hurt > 0 ? "#fff3d2" : "#d64129";
+    ctx.lineWidth = 4;
+    ctx.globalAlpha = .82;
+    ctx.beginPath();
+    ctx.ellipse(0, 24, 42, 12, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = p.hurt > 0 ? "#fff5d0" : "#ff3928";
+    ctx.shadowBlur = p.hurt > 0 ? 32 : 20;
+    ctx.drawImage(sprite, -size / 2, 32 - size, size, size);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    return;
+  }
   ctx.rotate(p.angle - Math.PI / 2);
   ctx.shadowColor = "#ff2f22";
   ctx.shadowBlur = 25;
@@ -701,6 +721,8 @@ export default function DemonGame() {
     img.src = `${BASE_PATH}/demon-castle-map.png`;
     const enemySprites = new Image();
     enemySprites.src = `${BASE_PATH}/enemy-sprites.png`;
+    const playerSprite = new Image();
+    playerSprite.src = `${BASE_PATH}/demon-king-sprite.png`;
     let raf;
     let last = performance.now();
     let uiClock = 0;
@@ -773,7 +795,7 @@ export default function DemonGame() {
         ctx.restore();
       }
       for (const e of s.enemies) drawEnemy(ctx, e, enemySprites);
-      if (s.started) drawPlayer(ctx, s.player, s.time);
+      if (s.started) drawPlayer(ctx, s.player, s.time, playerSprite);
       for (const swing of s.swings) {
         const alpha = clamp(swing.life / swing.maxLife, 0, 1);
         ctx.save();
