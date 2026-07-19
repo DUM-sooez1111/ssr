@@ -8,6 +8,29 @@ const THRONE = { x: 800, y: 154 };
 const LANES = [515, 650, 800, 950, 1085];
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const SAVE_KEY = "demon-king-final-stand-save-v1";
+const PROGRESS_KEY = "demon-king-final-stand-progress-v1";
+const DRAW_COST = 10;
+
+const LOOT_TABLE = {
+  weapon: {
+    label: "무기",
+    names: { common: "검은 칼날", rare: "지옥 룬검", legendary: "군주의 대검" },
+  },
+  armor: {
+    label: "방어구",
+    names: { common: "흑철 판갑", rare: "영혼 방벽", legendary: "불멸 갑주" },
+  },
+  undead: {
+    label: "망자",
+    names: { common: "해골 계약", rare: "망령 핵", legendary: "죽음의 인장" },
+  },
+};
+
+const RARITY = {
+  common: { label: "일반", power: 1, color: "#b8c5c7" },
+  rare: { label: "희귀", power: 2, color: "#63dceb" },
+  legendary: { label: "전설", power: 4, color: "#f1bb4e" },
+};
 
 const SKILLS = [
   { id: "sword", key: "R / 우클릭", name: "마왕검 휘두르기", sub: "전방 · 0.8초", color: "#73d7ff", icon: "⚔" },
@@ -31,6 +54,55 @@ function keepInArena(entity, maxY = 855) {
   entity.x = clamp(entity.x, bounds.min, bounds.max);
 }
 
+function readProgress() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY) || "null");
+    if (saved?.version !== 1) return null;
+    return {
+      souls: Math.max(0, Math.floor(Number(saved.souls) || 0)),
+      swordLevel: Math.max(0, Math.floor(Number(saved.swordLevel) || 0)),
+      magicLevel: Math.max(0, Math.floor(Number(saved.magicLevel) || 0)),
+      minionLevel: Math.max(0, Math.floor(Number(saved.minionLevel) || 0)),
+      maxHp: Math.max(100, Math.floor(Number(saved.maxHp) || 100)),
+      inventory: Array.isArray(saved.inventory)
+        ? saved.inventory
+          .filter(item => LOOT_TABLE[item?.category] && RARITY[item?.rarity])
+          .map(item => ({
+            category: item.category,
+            rarity: item.rarity,
+            name: String(item.name || LOOT_TABLE[item.category].names[item.rarity]),
+            count: Math.max(1, Math.floor(Number(item.count) || 1)),
+          }))
+        : [],
+    };
+  } catch {
+    localStorage.removeItem(PROGRESS_KEY);
+    return null;
+  }
+}
+
+function saveProgress(s) {
+  try {
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify({
+      version: 1,
+      souls: s.souls,
+      swordLevel: s.swordLevel,
+      magicLevel: s.magicLevel,
+      minionLevel: s.minionLevel,
+      maxHp: s.player.maxHp,
+      inventory: Array.isArray(s.inventory) ? s.inventory : [],
+    }));
+  } catch {
+    // The active run can continue even when browser storage is unavailable.
+  }
+}
+
+function inventoryPower(inventory, category) {
+  return (inventory || [])
+    .filter(item => item.category === category)
+    .reduce((total, item) => total + (RARITY[item.rarity]?.power || 1) * (item.count || 1), 0);
+}
+
 function makeState() {
   return {
     started: false,
@@ -45,11 +117,13 @@ function makeState() {
     kills: 0,
     score: 0,
     souls: 0,
+    inventory: [],
+    nextEntityId: 1,
     swordLevel: 0,
     minionLevel: 0,
     shake: 0,
     flash: 0,
-    player: { x: 800, y: 265, hp: 100, maxHp: 100, angle: Math.PI / 2, hurt: 0 },
+    player: { x: 800, y: 265, hp: 100, maxHp: 100, angle: Math.PI / 2, hurt: 0, moving: false },
     magicLevel: 0,
     cooldowns: { sword: 0, slash: 0, fire: 0, shot: 0 },
     enemies: [],
@@ -91,7 +165,10 @@ function drawDiamond(ctx, x, y, r, fill, stroke = "#111") {
 
 function drawPlayer(ctx, p, time, sprite) {
   ctx.save();
-  ctx.translate(p.x, p.y + Math.sin(time * 5) * 2);
+  const stride = p.moving ? Math.sin(time * 12) : Math.sin(time * 4) * .25;
+  ctx.translate(p.x, p.y + stride * 3);
+  ctx.rotate(stride * (p.moving ? .025 : .008));
+  ctx.scale(1 + Math.abs(stride) * .012, 1 - Math.abs(stride) * .01);
   if (sprite?.complete && sprite.naturalWidth > 0) {
     const size = 158;
     ctx.fillStyle = "rgba(0,0,0,.55)";
@@ -137,9 +214,12 @@ function drawPlayer(ctx, p, time, sprite) {
   ctx.restore();
 }
 
-function drawEnemy(ctx, e, sprites) {
+function drawEnemy(ctx, e, sprites, time) {
   ctx.save();
-  ctx.translate(e.x, e.y);
+  const stride = Math.sin(time * (e.type === "boss" ? 4.5 : 7.5) + (e.phase || 0));
+  const attackKick = e.attack > .72 ? Math.sin(e.attack * 24) * .035 : 0;
+  ctx.translate(e.x, e.y + stride * (e.type === "boss" ? 2.5 : 2));
+  ctx.rotate(stride * .014 + attackKick);
 
   if (sprites?.complete && sprites.naturalWidth > 0) {
     const spriteCells = {
@@ -238,6 +318,58 @@ function drawEnemy(ctx, e, sprites) {
   ctx.restore();
 }
 
+function drawMinion(ctx, m, sprites, time) {
+  ctx.save();
+  const stride = Math.sin(time * 10 + (m.phase || 0));
+  const attackKick = m.attack > .35 ? Math.sin(m.attack * 25) * .05 : 0;
+  ctx.translate(m.x, m.y + stride * 2.5);
+  ctx.rotate(stride * .02 + attackKick);
+
+  const visualLevel = Math.max(0, m.level || 0);
+  const tier = visualLevel >= 6 ? 2 : visualLevel >= 3 ? 1 : 0;
+  const sprite = sprites?.[tier];
+  const size = 82 + tier * 13 + Math.min(12, visualLevel * 1.5);
+
+  ctx.fillStyle = "rgba(0,0,0,.5)";
+  ctx.beginPath();
+  ctx.ellipse(0, 18, size * .27, size * .09, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (sprite?.complete && sprite.naturalWidth > 0) {
+    ctx.shadowColor = tier === 2 ? "#ff9d32" : "#63eaff";
+    ctx.shadowBlur = 10 + tier * 7;
+    ctx.globalAlpha = m.hurt > 0 ? .58 : 1;
+    ctx.drawImage(sprite, -size / 2, 23 - size, size, size);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  } else {
+    ctx.shadowColor = "#70efa4";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = m.hurt > 0 ? "#d9ffff" : "#b9d8c2";
+    ctx.strokeStyle = "#1a3024";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#151515";
+    ctx.fillRect(-8, -5, 5, 5);
+    ctx.fillRect(3, -5, 5, 5);
+  }
+
+  const barWidth = 48 + tier * 7;
+  const barY = 28;
+  ctx.fillStyle = "rgba(5,13,16,.9)";
+  ctx.fillRect(-barWidth / 2, barY, barWidth, 6);
+  ctx.fillStyle = m.hurt > 0 ? "#d5ffff" : "#58e5d8";
+  ctx.fillRect(-barWidth / 2, barY, barWidth * clamp(m.hp / m.maxHp, 0, 1), 6);
+  ctx.fillStyle = tier === 2 ? "#ffd66d" : "#b7fbff";
+  ctx.font = "800 10px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(`망자 LV.${visualLevel}`, 0, barY + 18);
+  ctx.restore();
+}
+
 function updateGame(s, dt, keys, mouse, canvas) {
   if (!s.started || s.over) return;
   s.time += dt;
@@ -252,6 +384,10 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.flash = Math.max(0, s.flash - dt * 3);
   s.player.hurt = Math.max(0, s.player.hurt - dt);
   for (const k in s.cooldowns) s.cooldowns[k] = Math.max(0, s.cooldowns[k] - dt);
+  const weaponPower = inventoryPower(s.inventory, "weapon");
+  const armorPower = inventoryPower(s.inventory, "armor");
+  const undeadPower = inventoryPower(s.inventory, "undead");
+  const playerDamageMultiplier = 1 - Math.min(.4, armorPower * .015);
 
   if (s.waveTimer > 24) {
     const completedWave = s.wave;
@@ -259,6 +395,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
     s.waveTimer = 0;
     if (completedWave % 5 === 0) {
       s.restTimer = 10;
+      s.enemies = [];
+      s.enemyShots = [];
       s.rings.push({ x: s.player.x, y: s.player.y, r: 18, life: 1.1, color: "#65eaff" });
       addParticles(s, s.player.x, s.player.y, "#65eaff", 16, .65);
     }
@@ -273,7 +411,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       x: 800, y: 870, r: 42, hp: maxHp, maxHp,
       speed: (38 + Math.min(24, s.wave * .45)) * (1 + Math.min(.2, heroTier * .035)),
       damage: Math.round((34 + Math.floor(s.wave * .7)) * (1 + heroTier * .16)),
-      type: "boss", color: "#ff3425", attack: 0, tier: heroTier,
+      type: "boss", color: "#ff3425", attack: 0, tier: heroTier, phase: Math.random() * Math.PI * 2,
     });
     s.bossSpawnedWave = s.wave;
     s.flash = 1.4;
@@ -284,6 +422,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
   const moveX = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
   const moveY = (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) - (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0);
   const len = Math.hypot(moveX, moveY) || 1;
+  s.player.moving = moveX !== 0 || moveY !== 0;
   s.player.x += moveX / len * 255 * dt;
   s.player.y += moveY / len * 255 * dt;
   keepInArena(s.player, 765);
@@ -299,7 +438,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       vx: Math.cos(a) * 620,
       vy: Math.sin(a) * 620,
       life: 1.35,
-      damage: 24 + s.magicLevel * 6 + s.swordLevel * 5,
+      damage: 24 + s.magicLevel * 6 + s.swordLevel * 5 + weaponPower * 2,
     });
     addParticles(s, s.player.x, s.player.y, "#d574ff", 5, .4);
   };
@@ -338,7 +477,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
         y: 870 + i * 35, r: stats.r,
         hp: stats.hp, maxHp: stats.hp, speed: stats.speed,
         damage: stats.damage, type, color: stats.color,
-        attack: 0, tier: heroTier,
+        attack: 0, tier: heroTier, phase: Math.random() * Math.PI * 2,
       });
     }
     s.spawnTimer = Math.max(.58, 2.05 - s.wave * .095);
@@ -362,9 +501,17 @@ function updateGame(s, dt, keys, mouse, canvas) {
     shot.x += shot.vx * dt;
     shot.y += shot.vy * dt;
     shot.life -= dt;
-    if (shot.life > 0 && dist(shot, s.player) < 25) {
+    if (shot.life > 0 && shot.targetId) {
+      const target = s.minions.find(m => m.id === shot.targetId && !m.dead);
+      if (target && dist(shot, target) < 24) {
+        shot.life = 0;
+        target.hp -= shot.damage;
+        target.hurt = .18;
+        addParticles(s, target.x, target.y, "#68e8ef", 8, .5);
+      }
+    } else if (shot.life > 0 && dist(shot, s.player) < 25) {
       shot.life = 0;
-      s.player.hp -= shot.damage;
+      s.player.hp -= shot.damage * playerDamageMultiplier;
       s.player.hurt = .18;
       s.shake = 5;
       addParticles(s, s.player.x, s.player.y, "#e9bc72", 9, .55);
@@ -373,6 +520,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
 
   for (const m of s.minions) {
     m.life -= dt;
+    m.hurt = Math.max(0, (m.hurt || 0) - dt);
+    if (m.hp <= 0 || m.dead) continue;
     let target = null;
     let targetDistance = Infinity;
     let bestScore = Infinity;
@@ -393,7 +542,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       m.attack -= dt;
       if (targetDistance < 35 + m.level * 2 && m.attack <= 0) {
         const knightAdvantage = target.type === "knight";
-        const damage = knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10;
+        const damage = (knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10) + undeadPower * 4;
         hurtEnemy(target, damage, knightAdvantage ? "#f5d56a" : "#90e2b1");
         m.attack = knightAdvantage ? .55 : Math.max(.38, .75 - m.level * .035);
       }
@@ -407,10 +556,36 @@ function updateGame(s, dt, keys, mouse, canvas) {
     keepInArena(m);
   }
 
+  for (const m of s.minions) {
+    if (m.hp > 0 || m.dead) continue;
+    m.dead = true;
+    s.soulOrbs.push({
+      x: m.x,
+      y: m.y,
+      value: 4,
+      life: 14,
+      phase: Math.random() * Math.PI * 2,
+    });
+    addParticles(s, m.x, m.y, "#65eaff", 18, .9);
+    s.rings.push({ x: m.x, y: m.y, r: 8, life: .55, color: "#65eaff" });
+  }
+
   for (const e of s.enemies) {
     e.attack -= dt;
-    const dp = dist(e, s.player);
-    const a = Math.atan2(s.player.y - e.y, s.player.x - e.x);
+    let target = s.player;
+    let targetIsMinion = false;
+    let nearestMinionDistance = Infinity;
+    for (const minion of s.minions) {
+      if (minion.dead || minion.hp <= 0) continue;
+      const d = dist(e, minion);
+      if (d < nearestMinionDistance) {
+        nearestMinionDistance = d;
+        target = minion;
+        targetIsMinion = true;
+      }
+    }
+    const dp = dist(e, target);
+    const a = Math.atan2(target.y - e.y, target.x - e.x);
     if (e.type === "archer") {
       if (dp > 340) {
         e.x += Math.cos(a) * e.speed * dt;
@@ -424,15 +599,25 @@ function updateGame(s, dt, keys, mouse, canvas) {
         s.enemyShots.push({
           x: e.x, y: e.y, vx: Math.cos(a) * arrowSpeed, vy: Math.sin(a) * arrowSpeed,
           life: 2.1, damage: e.damage, type: "arrow",
+          targetId: targetIsMinion ? target.id : null,
         });
         e.attack = 1.55;
       }
-    } else if (dp > e.r + 27) {
+    } else if (dp > e.r + (targetIsMinion ? 22 : 27)) {
       e.x += Math.cos(a) * e.speed * dt;
       e.y += Math.sin(a) * e.speed * dt;
     } else if (e.attack <= 0) {
-      s.player.hp -= e.damage; s.player.hurt = .18; s.shake = 7; e.attack = 1.05;
-      addParticles(s, s.player.x, s.player.y, "#ff3333", 10, .7);
+      if (targetIsMinion) {
+        target.hp -= e.damage;
+        target.hurt = .18;
+        addParticles(s, target.x, target.y, "#65eaff", 9, .6);
+      } else {
+        s.player.hp -= e.damage * playerDamageMultiplier;
+        s.player.hurt = .18;
+        s.shake = 7;
+        addParticles(s, s.player.x, s.player.y, "#ff3333", 10, .7);
+      }
+      e.attack = 1.05;
     }
     keepInArena(e);
   }
@@ -461,7 +646,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.enemies = s.enemies.filter(e => !e.dead);
   s.shots = s.shots.filter(x => x.life > 0);
   s.enemyShots = s.enemyShots.filter(x => x.life > 0);
-  s.minions = s.minions.filter(x => x.life > 0);
+  s.minions = s.minions.filter(x => x.life > 0 && !x.dead);
   for (const swing of s.swings) swing.life -= dt;
   s.swings = s.swings.filter(x => x.life > 0);
   for (const soul of s.soulOrbs) {
@@ -494,10 +679,13 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, inventory: [], cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
   const [hasSave, setHasSave] = useState(false);
   const [saveNotice, setSaveNotice] = useState("");
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [inventoryTab, setInventoryTab] = useState("undead");
+  const [drawNotice, setDrawNotice] = useState("");
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
@@ -505,7 +693,9 @@ export default function DemonGame() {
     setUi({
       started: s.started, over: s.over, win: s.win, wave: s.wave, rest: s.restTimer,
       hp: Math.max(0, s.player.hp), maxHp: s.player.maxHp,
-      kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, minionLevel: s.minionLevel, cooldowns: { ...s.cooldowns },
+      kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, minionLevel: s.minionLevel,
+      inventory: Array.isArray(s.inventory) ? s.inventory.map(item => ({ ...item })) : [],
+      cooldowns: { ...s.cooldowns },
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
     });
   }, []);
@@ -523,6 +713,7 @@ export default function DemonGame() {
     };
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, savedAt: Date.now(), state: snapshot }));
+      saveProgress(s);
       setHasSave(true);
       if (!silent) {
         setSaveNotice("저장됨");
@@ -539,15 +730,31 @@ export default function DemonGame() {
       if (!payload?.state || payload.version !== 1) throw new Error("invalid save");
       const base = makeState();
       const loaded = payload.state;
+      const inventory = Array.isArray(loaded.inventory) ? loaded.inventory : [];
+      const minionMaxHp = 80 + (loaded.minionLevel || 0) * 30 + inventoryPower(inventory, "undead") * 15;
+      let nextEntityId = Math.max(1, Number(loaded.nextEntityId) || 1);
+      const minions = Array.isArray(loaded.minions)
+        ? loaded.minions.map(minion => ({
+          ...minion,
+          id: minion.id || nextEntityId++,
+          level: Number.isFinite(minion.level) ? minion.level : (loaded.minionLevel || 0),
+          maxHp: Math.max(1, Number(minion.maxHp) || minionMaxHp),
+          hp: Math.max(1, Number(minion.hp) || minionMaxHp),
+          hurt: Number(minion.hurt) || 0,
+          phase: Number.isFinite(minion.phase) ? minion.phase : Math.random() * Math.PI * 2,
+        }))
+        : [];
       stateRef.current = {
         ...base,
         ...loaded,
         started: true,
         over: false,
+        inventory,
+        nextEntityId,
         player: { ...base.player, ...loaded.player },
         cooldowns: { ...base.cooldowns, ...loaded.cooldowns },
         enemies: Array.isArray(loaded.enemies) ? loaded.enemies : [],
-        minions: Array.isArray(loaded.minions) ? loaded.minions : [],
+        minions,
         soulOrbs: Array.isArray(loaded.soulOrbs) ? loaded.soulOrbs : [],
       };
       syncUi();
@@ -564,13 +771,14 @@ export default function DemonGame() {
     if (!s.started || s.over) return;
     if (skill === "sword" && s.cooldowns.sword <= 0) {
       s.cooldowns.sword = .75;
+      const weaponPower = inventoryPower(s.inventory, "weapon");
       const angle = Math.atan2(mouseRef.current.y - s.player.y, mouseRef.current.x - s.player.x);
       s.player.angle = angle;
       s.swings.push({ x: s.player.x, y: s.player.y, angle, life: .26, maxLife: .26 });
       for (const e of s.enemies) {
         const targetAngle = Math.atan2(e.y - s.player.y, e.x - s.player.x);
         if (dist(s.player, e) < 165 + e.r && Math.abs(angleDelta(targetAngle, angle)) < .95) {
-          e.hp -= 52 + s.swordLevel * 14;
+          e.hp -= 52 + s.swordLevel * 14 + weaponPower * 4;
           e.x += Math.cos(angle) * 32;
           e.y += Math.sin(angle) * 32;
           addParticles(s, e.x, e.y, "#8ee6ff", 11, .8);
@@ -607,14 +815,21 @@ export default function DemonGame() {
     }
     if (skill === "summon" && s.souls >= 8) {
       s.souls -= 8;
+      const undeadPower = inventoryPower(s.inventory, "undead");
+      const maxHp = 80 + s.minionLevel * 30 + undeadPower * 15;
       for (let i = 0; i < 3; i++) {
         const a = i / 3 * Math.PI * 2;
         s.minions.push({
+          id: s.nextEntityId++,
           x: s.player.x + Math.cos(a) * 55,
           y: s.player.y + Math.sin(a) * 55,
-          life: 14 + s.minionLevel * 2,
+          life: 14 + s.minionLevel * 2 + undeadPower,
           attack: 0,
           level: s.minionLevel,
+          hp: maxHp,
+          maxHp,
+          hurt: 0,
+          phase: Math.random() * Math.PI * 2,
         });
       }
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .7, color: "#b889ff" });
@@ -655,7 +870,11 @@ export default function DemonGame() {
       if (s.souls < cost) return;
       s.souls -= cost;
       s.minionLevel++;
-      for (const minion of s.minions) minion.level = s.minionLevel;
+      for (const minion of s.minions) {
+        minion.level = s.minionLevel;
+        minion.maxHp += 30;
+        minion.hp += 30;
+      }
       purchased = true;
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .75, color: "#70efa4" });
       addParticles(s, s.player.x, s.player.y, "#70efa4", 20, .75);
@@ -668,10 +887,59 @@ export default function DemonGame() {
     }
   }, [saveGame, syncUi]);
 
+  const drawLoot = useCallback((category) => {
+    const s = stateRef.current;
+    if (!s.started || s.over || s.restTimer <= 0) {
+      setDrawNotice("뽑기는 휴식 시간에만 가능합니다");
+      window.setTimeout(() => setDrawNotice(""), 1600);
+      return;
+    }
+    if (s.souls < DRAW_COST) {
+      setDrawNotice("영혼이 부족합니다");
+      window.setTimeout(() => setDrawNotice(""), 1600);
+      return;
+    }
+    const roll = Math.random();
+    const rarity = roll < .08 ? "legendary" : roll < .35 ? "rare" : "common";
+    const itemName = LOOT_TABLE[category].names[rarity];
+    const power = RARITY[rarity].power;
+    s.souls -= DRAW_COST;
+    const owned = s.inventory.find(item => item.category === category && item.rarity === rarity);
+    if (owned) owned.count += 1;
+    else s.inventory.push({ category, rarity, name: itemName, count: 1 });
+
+    if (category === "armor") {
+      s.player.maxHp += power * 5;
+      s.player.hp = Math.min(s.player.maxHp, s.player.hp + power * 5);
+    }
+    if (category === "undead") {
+      for (const minion of s.minions) {
+        minion.maxHp += power * 15;
+        minion.hp += power * 15;
+        minion.life += power;
+      }
+    }
+    setInventoryTab(category);
+    setDrawNotice(`${RARITY[rarity].label} · ${itemName} 획득!`);
+    window.setTimeout(() => setDrawNotice(""), 1800);
+    syncUi();
+    saveGame(true);
+  }, [saveGame, syncUi]);
+
   const start = useCallback(() => {
     localStorage.removeItem(SAVE_KEY);
     setHasSave(false);
     const fresh = makeState();
+    const progress = readProgress();
+    if (progress) {
+      fresh.souls = progress.souls;
+      fresh.swordLevel = progress.swordLevel;
+      fresh.magicLevel = progress.magicLevel;
+      fresh.minionLevel = progress.minionLevel;
+      fresh.inventory = progress.inventory;
+      fresh.player.maxHp = progress.maxHp;
+      fresh.player.hp = progress.maxHp;
+    }
     fresh.started = true;
     stateRef.current = fresh;
     syncUi();
@@ -691,9 +959,14 @@ export default function DemonGame() {
 
   useEffect(() => {
     if (!ui.over) return;
+    saveProgress(stateRef.current);
     localStorage.removeItem(SAVE_KEY);
     setHasSave(false);
   }, [ui.over]);
+
+  useEffect(() => {
+    if (ui.rest > 0) setInventoryOpen(true);
+  }, [ui.rest > 0]);
 
   useEffect(() => {
     const down = (e) => {
@@ -723,6 +996,11 @@ export default function DemonGame() {
     enemySprites.src = `${BASE_PATH}/enemy-sprites.png`;
     const playerSprite = new Image();
     playerSprite.src = `${BASE_PATH}/demon-king-sprite.png`;
+    const minionSprites = [1, 2, 3].map(tier => {
+      const sprite = new Image();
+      sprite.src = `${BASE_PATH}/undead-minion-tier${tier}.png`;
+      return sprite;
+    });
     let raf;
     let last = performance.now();
     let uiClock = 0;
@@ -783,18 +1061,8 @@ export default function DemonGame() {
         ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(5, -5); ctx.lineTo(5, 5); ctx.closePath(); ctx.fill();
         ctx.restore();
       }
-      for (const m of s.minions) {
-        ctx.save(); ctx.translate(m.x, m.y);
-        const minionScale = 1 + m.level * .06;
-        ctx.scale(minionScale, minionScale);
-        ctx.shadowColor = "#70efa4";
-        ctx.shadowBlur = 5 + m.level * 3;
-        ctx.fillStyle = "#b9d8c2"; ctx.strokeStyle = "#1a3024"; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(0, 0, 15, 0, 7); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = "#151515"; ctx.fillRect(-8, -5, 5, 5); ctx.fillRect(3, -5, 5, 5);
-        ctx.restore();
-      }
-      for (const e of s.enemies) drawEnemy(ctx, e, enemySprites);
+      for (const m of s.minions) drawMinion(ctx, m, minionSprites, s.time);
+      for (const e of s.enemies) drawEnemy(ctx, e, enemySprites, s.time);
       if (s.started) drawPlayer(ctx, s.player, s.time, playerSprite);
       for (const swing of s.swings) {
         const alpha = clamp(swing.life / swing.maxLife, 0, 1);
@@ -854,6 +1122,14 @@ export default function DemonGame() {
     mouseRef.current.y = (e.clientY - rect.top) / rect.height * H;
   };
 
+  const inventoryItems = ui.inventory.filter(item => item.category === inventoryTab);
+  const inventoryPowerTotal = inventoryPower(ui.inventory, inventoryTab);
+  const inventoryEffect = {
+    weapon: "전투력당 기본 공격 +2 · 마왕검 +4",
+    armor: "전투력당 피해 감소 1.5% · 최대 HP +5",
+    undead: "전투력당 망자 HP +15 · 공격 +4 · 지속 +1초",
+  }[inventoryTab];
+
   return (
     <main className="game-shell">
       <header className="topbar">
@@ -866,6 +1142,11 @@ export default function DemonGame() {
           <b>{ui.rest > 0 ? `REST ${Math.ceil(ui.rest)}` : `WAVE ${ui.wave} ∞`}</b>
         </div>
         <div className="top-actions">
+          {ui.started && !ui.over && (
+            <button className="inventory-button" onClick={() => setInventoryOpen(open => !open)}>
+              {inventoryOpen ? "인벤토리 닫기" : "인벤토리"}
+            </button>
+          )}
           {ui.started && !ui.over && <button className="save-button" onClick={() => saveGame(false)}>{saveNotice || "진행 저장"}</button>}
           <button className="sound" onClick={() => setMuted(v => !v)} aria-label="소리 전환">{muted ? "소리 꺼짐" : "소리 켜짐"}</button>
         </div>
@@ -913,7 +1194,7 @@ export default function DemonGame() {
             <span>BREATHING ROOM</span>
             <b>휴식 시간</b>
             <strong>{Math.ceil(ui.rest)}</strong>
-            <small>새 적 생성 중지 · 체력 회복 · 영혼 상점 이용 가능</small>
+            <small>영웅 전원 철수 · 체력 회복 · 3종 뽑기 가능</small>
           </div>
         )}
 
@@ -930,9 +1211,62 @@ export default function DemonGame() {
               <kbd>3</kbd><span>마력 강화 <small>LV.{ui.magicLevel} · 스킬 피해/범위/쿨</small></span><b>{18 + ui.magicLevel * 12}</b>
             </button>
             <button onClick={() => buySoulItem("minion")} disabled={ui.souls < 20 + ui.minionLevel * 15}>
-              <kbd>4</kbd><span>소환수 강화 <small>LV.{ui.minionLevel}</small></span><b>{20 + ui.minionLevel * 15}</b>
+              <kbd>4</kbd><span>망자 강화 <small>LV.{ui.minionLevel} · 체력/공격/외형</small></span><b>{20 + ui.minionLevel * 15}</b>
             </button>
           </div>
+        )}
+
+        {ui.started && !ui.over && inventoryOpen && (
+          <aside className="inventory-panel">
+            <div className="inventory-head">
+              <div><span>SOUL INVENTORY</span><b>인벤토리</b></div>
+              <strong>◈ {ui.souls}</strong>
+            </div>
+            <div className="inventory-tabs">
+              {["armor", "weapon", "undead"].map(category => (
+                <button
+                  key={category}
+                  className={inventoryTab === category ? "active" : ""}
+                  onClick={() => setInventoryTab(category)}
+                >
+                  {LOOT_TABLE[category].label}
+                </button>
+              ))}
+            </div>
+            <div className="inventory-summary">
+              <span>총 전투력 <b>{inventoryPowerTotal}</b></span>
+              <small>{inventoryEffect}</small>
+            </div>
+            <div className="inventory-list">
+              {inventoryItems.length === 0 && <p>아직 획득한 장비가 없습니다.</p>}
+              {inventoryItems.map(item => (
+                <div key={`${item.category}-${item.rarity}`}>
+                  <i style={{ background: RARITY[item.rarity].color }} />
+                  <span>
+                    <small style={{ color: RARITY[item.rarity].color }}>{RARITY[item.rarity].label}</small>
+                    <b>{item.name}</b>
+                  </span>
+                  <strong>×{item.count}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="draw-zone">
+              <div className="draw-buttons">
+                {["undead", "weapon", "armor"].map(category => (
+                  <button
+                    key={category}
+                    onClick={() => drawLoot(category)}
+                    disabled={ui.rest <= 0 || ui.souls < DRAW_COST}
+                  >
+                    {LOOT_TABLE[category].label} 뽑기 <b>◈ {DRAW_COST}</b>
+                  </button>
+                ))}
+              </div>
+              <small className={drawNotice ? "notice" : ""}>
+                {drawNotice || (ui.rest > 0 ? "일반 65% · 희귀 27% · 전설 8%" : "뽑기는 휴식 시간에만 가능합니다")}
+              </small>
+            </div>
+          </aside>
         )}
 
         {!ui.started && (
@@ -987,7 +1321,7 @@ export default function DemonGame() {
       </section>
 
       <footer>
-        <span><i className="red-dot" /> 모든 적은 마왕만 공격합니다</span>
+        <span><i className="red-dot" /> 적은 망자가 있으면 망자를 먼저 공격합니다</span>
         <p><kbd>W A S D</kbd> 이동 <b>·</b> <kbd>F / 클릭</kbd> 암흑탄 <b>·</b> <kbd>R / 우클릭</kbd> 마왕검</p>
         <span className="map-credit">원본 이미지 기반 왕좌의 방</span>
       </footer>
