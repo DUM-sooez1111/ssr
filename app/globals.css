@@ -53,6 +53,11 @@ button { font: inherit; }
   border: 1px solid #765d2e; border-radius: 3px; cursor: pointer; font-size: 11px;
 }
 .inventory-button:hover { color: #fff0bf; border-color: #d8ad4f; }
+.index-button, .fullscreen-button {
+  min-width: 58px; padding: 8px 9px; color: #b7d6dc; background: rgba(12,24,29,.78);
+  border: 1px solid #3b5960; border-radius: 3px; cursor: pointer; font-size: 11px;
+}
+.index-button:hover, .fullscreen-button:hover { color: #e8fbff; border-color: #79c8d5; }
 
 .game-wrap {
   position: relative; width: min(1500px, calc((100vh - 150px) * 1.7778), 100%);
@@ -153,10 +158,14 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: 
 .inventory-summary small { color: #6f898d; font-size: 7px; }
 .inventory-list { min-height: 78px; max-height: 150px; overflow-y: auto; padding: 0 7px; }
 .inventory-list > p { margin: 22px 0; color: #657578; text-align: center; font-size: 9px; }
-.inventory-list > div {
+.inventory-item {
+  width: 100%; color: inherit; background: transparent; border: 0;
   display: grid; grid-template-columns: 5px 1fr auto; align-items: center; gap: 7px;
-  padding: 7px 5px; border-top: 1px solid #20292b;
+  padding: 7px 5px; border-top: 1px solid #20292b; cursor: default; text-align: left;
 }
+.inventory-item:hover { background: rgba(99,220,235,.06); }
+.inventory-item.equipped { background: rgba(177,104,255,.12); box-shadow: inset 2px 0 #b66cff; }
+.inventory-item:has(small) { cursor: pointer; }
 .inventory-list i { width: 4px; height: 26px; box-shadow: 0 0 8px currentColor; }
 .inventory-list span { display: grid; }
 .inventory-list small { font-size: 7px; font-weight: 900; }
@@ -173,6 +182,26 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: 
 .draw-buttons button:disabled { opacity: .38; cursor: not-allowed; }
 .draw-zone small { min-height: 12px; color: #718386; text-align: center; font-size: 7px; }
 .draw-zone small.notice { color: #ffd878; font-weight: 900; }
+
+.index-panel {
+  position: absolute; z-index: 4; right: 2.2%; top: 18%; width: 292px; max-height: 68%;
+  overflow-y: auto; color: #dce9e9; background: rgba(5,10,13,.95);
+  border: 1px solid rgba(91,193,209,.55); box-shadow: 0 10px 36px #000;
+  backdrop-filter: blur(10px);
+}
+.index-head { display: grid; padding: 10px 12px; border-bottom: 1px solid #28444a; }
+.index-head span { color: #5c9ba5; font-size: 7px; letter-spacing: .16em; }
+.index-head b { color: #b9f4fa; font-size: 14px; }
+.index-panel section { padding: 9px 11px; border-bottom: 1px solid #1c2d31; }
+.index-panel h3 { display: flex; justify-content: space-between; margin: 0 0 5px; color: #e5c879; font-size: 10px; }
+.index-panel h3 small { color: #6ce4ee; font-size: 8px; }
+.index-panel p { margin: 0 0 7px; color: #81999d; font-size: 8px; line-height: 1.5; }
+.minion-index-list { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.minion-index-list span, .minion-index-list small { color: #8edce2; font-size: 7px; }
+.enemy-index-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.enemy-index-grid span { padding: 4px; color: #b9c7c9; background: #111a1d; font-size: 7px; }
+.rarity-index { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; }
+.rarity-index span { padding: 3px 5px; background: #111719; font-size: 8px; font-weight: 800; }
 
 .overlay {
   position: absolute; z-index: 5; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -245,7 +274,7 @@ footer b { color: #403930; margin: 0 7px; }
   .topbar { min-height: 48px; }
   .brand-mark { width: 34px; height: 34px; }
   .brand small, .wave-label span, .sound, footer > span { display: none; }
-  .save-button, .inventory-button { min-width: 48px; padding: 6px; font-size: 9px; }
+  .save-button, .inventory-button, .index-button, .fullscreen-button { min-width: 44px; padding: 6px 5px; font-size: 8px; }
   .wave-label b { font-size: 12px; }
   .game-wrap { width: 100%; margin-top: max(0px, calc((100vh - 150px - 56.25vw) / 2)); }
   .portrait { width: 36px; height: 36px; font-size: 18px; }
@@ -267,6 +296,7 @@ footer b { color: #403930; margin: 0 7px; }
   .soul-shop button { grid-template-columns: 18px auto; padding: 3px 4px; }
   .soul-shop button span, .soul-shop button > b { display: none; }
   .inventory-panel { right: 1.5%; top: 20%; width: min(210px, 47%); }
+  .index-panel { right: 1.5%; top: 20%; width: min(250px, 58%); max-height: 72%; }
   .inventory-head { padding: 6px 7px; }
   .inventory-list { max-height: 92px; }
   .inventory-summary small { display: none; }
