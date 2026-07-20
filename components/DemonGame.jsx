@@ -14,23 +14,43 @@ const DRAW_COST = 10;
 const LOOT_TABLE = {
   weapon: {
     label: "무기",
-    names: { common: "검은 칼날", rare: "지옥 룬검", legendary: "군주의 대검" },
+    names: {
+      common: "검은 칼날", uncommon: "강철 참검", rare: "지옥 룬검", heroic: "영웅 파쇄검",
+      epic: "심연 대검", unique: "혼식검", legendary: "군주의 대검", mythic: "신살검",
+      ancient: "태고의 마검", demonic: "마왕의 종말검",
+    },
   },
   armor: {
     label: "방어구",
-    names: { common: "흑철 판갑", rare: "영혼 방벽", legendary: "불멸 갑주" },
+    names: {
+      common: "흑철 판갑", uncommon: "강철 중갑", rare: "영혼 방벽", heroic: "영웅의 파갑",
+      epic: "심연 갑주", unique: "혼식 장갑", legendary: "불멸 갑주", mythic: "신화 마갑",
+      ancient: "태고의 성벽", demonic: "마왕의 절대갑",
+    },
   },
   undead: {
     label: "망자",
-    names: { common: "해골 계약", rare: "망령 핵", legendary: "죽음의 인장" },
+    names: {
+      common: "해골 계약", uncommon: "망자 서약", rare: "망령 핵", heroic: "기사의 유골",
+      epic: "심연의 뼈", unique: "혼식 심장", legendary: "죽음의 인장", mythic: "사령왕의 핵",
+      ancient: "태고의 유해", demonic: "마왕의 불사령",
+    },
   },
 };
 
 const RARITY = {
-  common: { label: "일반", power: 1, color: "#b8c5c7" },
-  rare: { label: "희귀", power: 2, color: "#63dceb" },
-  legendary: { label: "전설", power: 4, color: "#f1bb4e" },
+  common: { label: "일반", power: 1, chance: 35, color: "#b8c5c7", skinTier: 0 },
+  uncommon: { label: "고급", power: 2, chance: 22, color: "#7edb8c", skinTier: 0 },
+  rare: { label: "희귀", power: 3, chance: 15, color: "#63dceb", skinTier: 0 },
+  heroic: { label: "영웅", power: 4, chance: 10, color: "#6f91ff", skinTier: 1 },
+  epic: { label: "에픽", power: 5, chance: 7, color: "#b66cff", skinTier: 1 },
+  unique: { label: "유일", power: 7, chance: 4.5, color: "#ef64c7", skinTier: 1 },
+  legendary: { label: "전설", power: 9, chance: 3, color: "#f1bb4e", skinTier: 2 },
+  mythic: { label: "신화", power: 12, chance: 1.8, color: "#ff704d", skinTier: 2 },
+  ancient: { label: "태고", power: 16, chance: 1.2, color: "#f7f0b1", skinTier: 2 },
+  demonic: { label: "마왕", power: 22, chance: .5, color: "#ff304c", skinTier: 2 },
 };
+const RARITY_ORDER = Object.keys(RARITY);
 
 const SKILLS = [
   { id: "sword", key: "R / 우클릭", name: "마왕검 휘두르기", sub: "전방 · 0.8초", color: "#73d7ff", icon: "⚔" },
@@ -64,6 +84,7 @@ function readProgress() {
       magicLevel: Math.max(0, Math.floor(Number(saved.magicLevel) || 0)),
       minionLevel: Math.max(0, Math.floor(Number(saved.minionLevel) || 0)),
       maxHp: Math.max(100, Math.floor(Number(saved.maxHp) || 100)),
+      equippedUndead: RARITY[saved.equippedUndead] ? saved.equippedUndead : null,
       inventory: Array.isArray(saved.inventory)
         ? saved.inventory
           .filter(item => LOOT_TABLE[item?.category] && RARITY[item?.rarity])
@@ -90,6 +111,7 @@ function saveProgress(s) {
       magicLevel: s.magicLevel,
       minionLevel: s.minionLevel,
       maxHp: s.player.maxHp,
+      equippedUndead: RARITY[s.equippedUndead] ? s.equippedUndead : null,
       inventory: Array.isArray(s.inventory) ? s.inventory : [],
     }));
   } catch {
@@ -101,6 +123,10 @@ function inventoryPower(inventory, category) {
   return (inventory || [])
     .filter(item => item.category === category)
     .reduce((total, item) => total + (RARITY[item.rarity]?.power || 1) * (item.count || 1), 0);
+}
+
+function equippedUndeadPower(s) {
+  return RARITY[s.equippedUndead]?.power || 0;
 }
 
 function makeState() {
@@ -118,7 +144,9 @@ function makeState() {
     score: 0,
     souls: 0,
     inventory: [],
+    equippedUndead: null,
     nextEntityId: 1,
+    summonCount: 0,
     swordLevel: 0,
     minionLevel: 0,
     shake: 0,
@@ -346,9 +374,11 @@ function drawMinion(ctx, m, sprites, time) {
   ctx.scale(1 + stepLift * .016, 1 - stepLift * .02);
 
   const visualLevel = Math.max(0, m.level || 0);
-  const tier = visualLevel >= 6 ? 2 : visualLevel >= 3 ? 1 : 0;
+  const equipment = RARITY[m.equippedRarity];
+  const growthTier = visualLevel + Math.floor((m.kills || 0) / 3) >= 6 ? 2 : visualLevel + Math.floor((m.kills || 0) / 3) >= 3 ? 1 : 0;
+  const tier = Math.max(growthTier, equipment?.skinTier || 0);
   const sprite = sprites?.[tier];
-  const size = 82 + tier * 13 + Math.min(12, visualLevel * 1.5);
+  const size = 82 + tier * 13 + Math.min(18, visualLevel * 1.5 + (m.kills || 0) * .7);
 
   ctx.fillStyle = "rgba(0,0,0,.5)";
   ctx.beginPath();
@@ -363,8 +393,8 @@ function drawMinion(ctx, m, sprites, time) {
   }
 
   if (sprite?.complete && sprite.naturalWidth > 0) {
-    ctx.shadowColor = tier === 2 ? "#ff9d32" : "#63eaff";
-    ctx.shadowBlur = 10 + tier * 7;
+    ctx.shadowColor = equipment?.color || (tier === 2 ? "#ff9d32" : "#63eaff");
+    ctx.shadowBlur = 10 + tier * 7 + Math.min(14, (m.kills || 0));
     ctx.globalAlpha = m.hurt > 0 ? .58 : 1;
     ctx.drawImage(sprite, -size / 2, 23 - size, size, size);
     ctx.globalAlpha = 1;
@@ -390,10 +420,10 @@ function drawMinion(ctx, m, sprites, time) {
   ctx.fillRect(-barWidth / 2, barY, barWidth, 6);
   ctx.fillStyle = m.hurt > 0 ? "#d5ffff" : "#58e5d8";
   ctx.fillRect(-barWidth / 2, barY, barWidth * clamp(m.hp / m.maxHp, 0, 1), 6);
-  ctx.fillStyle = tier === 2 ? "#ffd66d" : "#b7fbff";
+  ctx.fillStyle = equipment?.color || (tier === 2 ? "#ffd66d" : "#b7fbff");
   ctx.font = "800 10px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(`망자 LV.${visualLevel}`, 0, barY + 18);
+  ctx.fillText(`망자 LV.${visualLevel} · 처치 ${m.kills || 0}`, 0, barY + 18);
   ctx.restore();
 }
 
@@ -413,7 +443,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
   for (const k in s.cooldowns) s.cooldowns[k] = Math.max(0, s.cooldowns[k] - dt);
   const weaponPower = inventoryPower(s.inventory, "weapon");
   const armorPower = inventoryPower(s.inventory, "armor");
-  const undeadPower = inventoryPower(s.inventory, "undead");
+  const undeadPower = inventoryPower(s.inventory, "undead") + equippedUndeadPower(s) * 2;
   const playerDamageMultiplier = 1 - Math.min(.4, armorPower * .015);
 
   if (s.waveTimer > 24) {
@@ -546,7 +576,6 @@ function updateGame(s, dt, keys, mouse, canvas) {
   }
 
   for (const m of s.minions) {
-    m.life -= dt;
     m.hurt = Math.max(0, (m.hurt || 0) - dt);
     m.moving = false;
     if (m.hp <= 0 || m.dead) continue;
@@ -572,8 +601,17 @@ function updateGame(s, dt, keys, mouse, canvas) {
       m.attack -= dt;
       if (targetDistance < 35 + m.level * 2 && m.attack <= 0) {
         const knightAdvantage = target.type === "knight";
-        const damage = (knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10) + undeadPower * 4;
+        const damage = (knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10) + undeadPower * 4 + (m.kills || 0) * 2;
+        const wasAlive = target.hp > 0;
         hurtEnemy(target, damage, knightAdvantage ? "#f5d56a" : "#90e2b1");
+        if (wasAlive && target.hp <= 0 && !target.minionKillClaimed) {
+          target.minionKillClaimed = true;
+          m.kills = (m.kills || 0) + 1;
+          m.maxHp += 4;
+          m.hp = Math.min(m.maxHp, m.hp + 12);
+          addParticles(s, m.x, m.y, RARITY[m.equippedRarity]?.color || "#70efa4", 12, .65);
+          s.rings.push({ x: m.x, y: m.y, r: 6, life: .38, color: RARITY[m.equippedRarity]?.color || "#70efa4" });
+        }
         m.attack = knightAdvantage ? .55 : Math.max(.38, .75 - m.level * .035);
       }
     } else {
@@ -585,6 +623,38 @@ function updateGame(s, dt, keys, mouse, canvas) {
     }
     keepInArena(m);
     m.moving = Math.hypot(m.x - previousX, m.y - previousY) > .1;
+  }
+
+  const livingMinions = s.minions.filter(m => !m.dead && m.hp > 0);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < livingMinions.length; i++) {
+      for (let j = i + 1; j < livingMinions.length; j++) {
+        const a = livingMinions[i];
+        const b = livingMinions[j];
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let distance = Math.hypot(dx, dy);
+        const minDistance = 38 + Math.min(18, ((a.level || 0) + (b.level || 0)) * 1.2);
+        if (distance >= minDistance) continue;
+        if (distance < .01) {
+          const angle = ((a.id || i) * 2.399 + (b.id || j)) % (Math.PI * 2);
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          distance = 1;
+        }
+        const push = (minDistance - distance) * .52;
+        const nx = dx / distance;
+        const ny = dy / distance;
+        a.x -= nx * push;
+        a.y -= ny * push;
+        b.x += nx * push;
+        b.y += ny * push;
+        a.moving = true;
+        b.moving = true;
+        keepInArena(a);
+        keepInArena(b);
+      }
+    }
   }
 
   for (const m of s.minions) {
@@ -669,7 +739,9 @@ function updateGame(s, dt, keys, mouse, canvas) {
         knight: { score: 100, souls: 1 },
       }[e.type];
       s.score += rewards.score;
-      const soulValue = rewards.souls;
+      const soulValue = e.type === "boss"
+        ? rewards.souls + (e.tier || 0) * 10
+        : rewards.souls * (1 + (e.tier || 0));
       s.soulOrbs.push({
         x: e.x, y: e.y, value: soulValue, life: 14,
         phase: Math.random() * Math.PI * 2,
@@ -680,7 +752,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.enemies = s.enemies.filter(e => !e.dead);
   s.shots = s.shots.filter(x => x.life > 0);
   s.enemyShots = s.enemyShots.filter(x => x.life > 0);
-  s.minions = s.minions.filter(x => x.life > 0 && !x.dead);
+  s.minions = s.minions.filter(x => !x.dead);
   for (const swing of s.swings) swing.life -= dt;
   s.swings = s.swings.filter(x => x.life > 0);
   for (const soul of s.soulOrbs) {
@@ -713,13 +785,15 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, inventory: [], cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, inventory: [], equippedUndead: null, minions: [], summonCost: 8, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
   const [hasSave, setHasSave] = useState(false);
   const [saveNotice, setSaveNotice] = useState("");
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [inventoryTab, setInventoryTab] = useState("undead");
   const [drawNotice, setDrawNotice] = useState("");
+  const [indexOpen, setIndexOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
@@ -729,6 +803,9 @@ export default function DemonGame() {
       hp: Math.max(0, s.player.hp), maxHp: s.player.maxHp,
       kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, minionLevel: s.minionLevel,
       inventory: Array.isArray(s.inventory) ? s.inventory.map(item => ({ ...item })) : [],
+      equippedUndead: s.equippedUndead,
+      minions: s.minions.filter(m => !m.dead).map(m => ({ id: m.id, hp: m.hp, maxHp: m.maxHp, kills: m.kills || 0, level: m.level || 0 })),
+      summonCost: 8 + (s.summonCount || 0) * 2,
       cooldowns: { ...s.cooldowns },
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
     });
@@ -765,7 +842,9 @@ export default function DemonGame() {
       const base = makeState();
       const loaded = payload.state;
       const inventory = Array.isArray(loaded.inventory) ? loaded.inventory : [];
-      const minionMaxHp = 80 + (loaded.minionLevel || 0) * 30 + inventoryPower(inventory, "undead") * 15;
+      const equippedUndead = RARITY[loaded.equippedUndead] ? loaded.equippedUndead : null;
+      const minionPower = inventoryPower(inventory, "undead") + (RARITY[equippedUndead]?.power || 0) * 2;
+      const minionMaxHp = 80 + (loaded.minionLevel || 0) * 30 + minionPower * 15;
       let nextEntityId = Math.max(1, Number(loaded.nextEntityId) || 1);
       const minions = Array.isArray(loaded.minions)
         ? loaded.minions.map(minion => ({
@@ -775,6 +854,8 @@ export default function DemonGame() {
           maxHp: Math.max(1, Number(minion.maxHp) || minionMaxHp),
           hp: Math.max(1, Number(minion.hp) || minionMaxHp),
           hurt: Number(minion.hurt) || 0,
+          kills: Math.max(0, Math.floor(Number(minion.kills) || 0)),
+          equippedRarity: RARITY[minion.equippedRarity] ? minion.equippedRarity : equippedUndead,
           phase: Number.isFinite(minion.phase) ? minion.phase : Math.random() * Math.PI * 2,
         }))
         : [];
@@ -784,6 +865,7 @@ export default function DemonGame() {
         started: true,
         over: false,
         inventory,
+        equippedUndead,
         nextEntityId,
         player: { ...base.player, ...loaded.player },
         cooldowns: { ...base.cooldowns, ...loaded.cooldowns },
@@ -847,9 +929,12 @@ export default function DemonGame() {
       }
       s.shake = 10; s.flash = .55;
     }
-    if (skill === "summon" && s.souls >= 8) {
-      s.souls -= 8;
-      const undeadPower = inventoryPower(s.inventory, "undead");
+    if (skill === "summon") {
+      const summonCost = 8 + (s.summonCount || 0) * 2;
+      if (s.souls < summonCost) return;
+      s.souls -= summonCost;
+      s.summonCount = (s.summonCount || 0) + 1;
+      const undeadPower = inventoryPower(s.inventory, "undead") + equippedUndeadPower(s) * 2;
       const maxHp = 80 + s.minionLevel * 30 + undeadPower * 15;
       for (let i = 0; i < 3; i++) {
         const a = i / 3 * Math.PI * 2;
@@ -857,9 +942,10 @@ export default function DemonGame() {
           id: s.nextEntityId++,
           x: s.player.x + Math.cos(a) * 55,
           y: s.player.y + Math.sin(a) * 55,
-          life: 14 + s.minionLevel * 2 + undeadPower,
           attack: 0,
           level: s.minionLevel,
+          kills: 0,
+          equippedRarity: s.equippedUndead,
           hp: maxHp,
           maxHp,
           hurt: 0,
@@ -933,8 +1019,12 @@ export default function DemonGame() {
       window.setTimeout(() => setDrawNotice(""), 1600);
       return;
     }
-    const roll = Math.random();
-    const rarity = roll < .08 ? "legendary" : roll < .35 ? "rare" : "common";
+    const roll = Math.random() * 100;
+    let cumulativeChance = 0;
+    const rarity = RARITY_ORDER.find(key => {
+      cumulativeChance += RARITY[key].chance;
+      return roll < cumulativeChance;
+    }) || "common";
     const itemName = LOOT_TABLE[category].names[rarity];
     const power = RARITY[rarity].power;
     s.souls -= DRAW_COST;
@@ -950,12 +1040,30 @@ export default function DemonGame() {
       for (const minion of s.minions) {
         minion.maxHp += power * 15;
         minion.hp += power * 15;
-        minion.life += power;
       }
     }
     setInventoryTab(category);
     setDrawNotice(`${RARITY[rarity].label} · ${itemName} 획득!`);
     window.setTimeout(() => setDrawNotice(""), 1800);
+    syncUi();
+    saveGame(true);
+  }, [saveGame, syncUi]);
+
+  const equipUndead = useCallback((rarity) => {
+    const s = stateRef.current;
+    if (!s.started || s.over || !RARITY[rarity]) return;
+    const owned = s.inventory.some(item => item.category === "undead" && item.rarity === rarity);
+    if (!owned) return;
+    const oldPower = equippedUndeadPower(s);
+    s.equippedUndead = rarity;
+    const powerGain = (equippedUndeadPower(s) - oldPower) * 2;
+    for (const minion of s.minions) {
+      minion.equippedRarity = rarity;
+      minion.maxHp = Math.max(1, minion.maxHp + powerGain * 15);
+      minion.hp = clamp(minion.hp + Math.max(0, powerGain * 15), 1, minion.maxHp);
+    }
+    setDrawNotice(`${RARITY[rarity].label} 망자 장착 완료`);
+    window.setTimeout(() => setDrawNotice(""), 1600);
     syncUi();
     saveGame(true);
   }, [saveGame, syncUi]);
@@ -971,6 +1079,7 @@ export default function DemonGame() {
       fresh.magicLevel = progress.magicLevel;
       fresh.minionLevel = progress.minionLevel;
       fresh.inventory = progress.inventory;
+      fresh.equippedUndead = progress.equippedUndead;
       fresh.player.maxHp = progress.maxHp;
       fresh.player.hp = progress.maxHp;
     }
@@ -999,8 +1108,27 @@ export default function DemonGame() {
   }, [ui.over]);
 
   useEffect(() => {
-    if (ui.rest > 0) setInventoryOpen(true);
+    if (ui.rest > 0) {
+      setInventoryOpen(true);
+      setIndexOpen(false);
+    }
   }, [ui.rest > 0]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch {
+      setSaveNotice("전체화면을 지원하지 않습니다");
+      window.setTimeout(() => setSaveNotice(""), 1500);
+    }
+  }, []);
 
   useEffect(() => {
     const down = (e) => {
@@ -1161,7 +1289,7 @@ export default function DemonGame() {
   const inventoryEffect = {
     weapon: "전투력당 기본 공격 +2 · 마왕검 +4",
     armor: "전투력당 피해 감소 1.5% · 최대 HP +5",
-    undead: "전투력당 망자 HP +15 · 공격 +4 · 지속 +1초",
+    undead: "전투력당 HP +15 · 공격 +4 · 장착 시 추가 2배",
   }[inventoryTab];
 
   return (
@@ -1177,10 +1305,16 @@ export default function DemonGame() {
         </div>
         <div className="top-actions">
           {ui.started && !ui.over && (
-            <button className="inventory-button" onClick={() => setInventoryOpen(open => !open)}>
+            <button className="inventory-button" onClick={() => { setInventoryOpen(open => !open); setIndexOpen(false); }}>
               {inventoryOpen ? "인벤토리 닫기" : "인벤토리"}
             </button>
           )}
+          {ui.started && !ui.over && (
+            <button className="index-button" onClick={() => { setIndexOpen(open => !open); setInventoryOpen(false); }}>
+              {indexOpen ? "인덱스 닫기" : "인덱스"}
+            </button>
+          )}
+          <button className="fullscreen-button" onClick={toggleFullscreen}>{fullscreen ? "화면 복귀" : "전체화면"}</button>
           {ui.started && !ui.over && <button className="save-button" onClick={() => saveGame(false)}>{saveNotice || "진행 저장"}</button>}
           <button className="sound" onClick={() => setMuted(v => !v)} aria-label="소리 전환">{muted ? "소리 꺼짐" : "소리 켜짐"}</button>
         </div>
@@ -1274,14 +1408,19 @@ export default function DemonGame() {
             <div className="inventory-list">
               {inventoryItems.length === 0 && <p>아직 획득한 장비가 없습니다.</p>}
               {inventoryItems.map(item => (
-                <div key={`${item.category}-${item.rarity}`}>
+                <button
+                  type="button"
+                  key={`${item.category}-${item.rarity}`}
+                  className={`inventory-item ${item.category === "undead" && ui.equippedUndead === item.rarity ? "equipped" : ""}`}
+                  onClick={() => item.category === "undead" && equipUndead(item.rarity)}
+                >
                   <i style={{ background: RARITY[item.rarity].color }} />
                   <span>
                     <small style={{ color: RARITY[item.rarity].color }}>{RARITY[item.rarity].label}</small>
-                    <b>{item.name}</b>
+                    <b>{item.name}{item.category === "undead" && ui.equippedUndead === item.rarity ? " · 장착" : ""}</b>
                   </span>
                   <strong>×{item.count}</strong>
-                </div>
+                </button>
               ))}
             </div>
             <div className="draw-zone">
@@ -1297,9 +1436,41 @@ export default function DemonGame() {
                 ))}
               </div>
               <small className={drawNotice ? "notice" : ""}>
-                {drawNotice || (ui.rest > 0 ? "일반 65% · 희귀 27% · 전설 8%" : "뽑기는 휴식 시간에만 가능합니다")}
+                {drawNotice || (ui.rest > 0 ? "10등급 · 최고 마왕 등급 0.5%" : "뽑기는 휴식 시간에만 가능합니다")}
               </small>
             </div>
+          </aside>
+        )}
+
+        {ui.started && !ui.over && indexOpen && (
+          <aside className="index-panel">
+            <div className="index-head"><span>BATTLE INDEX</span><b>전투 인덱스</b></div>
+            <section>
+              <h3>망자 부대 <small>{ui.minions.length}명 생존</small></h3>
+              <p>시간 제한 없이 유지 · 서로 겹치지 않음 · 영웅 처치마다 공격 +2, 최대 HP +4</p>
+              <div className="minion-index-list">
+                {ui.minions.length === 0 && <small>소환된 망자가 없습니다.</small>}
+                {ui.minions.slice(0, 8).map((minion, index) => (
+                  <span key={minion.id}>#{index + 1} HP {Math.ceil(minion.hp)}/{minion.maxHp} · 처치 {minion.kills}</span>
+                ))}
+              </div>
+            </section>
+            <section>
+              <h3>영웅 등급</h3>
+              <p>10웨이브마다 별이 오르며 체력·공격력·속도가 증가합니다. 별이 높을수록 영혼 보상도 배수로 증가합니다.</p>
+              <div className="enemy-index-grid">
+                <span>기사 · 근접</span><span>마법사 · 마법</span><span>중갑병 · 방어</span>
+                <span>궁수 · 원거리</span><span>암살자 · 고속</span><span>성기사 · 정예</span>
+              </div>
+            </section>
+            <section>
+              <h3>뽑기 10등급</h3>
+              <div className="rarity-index">
+                {RARITY_ORDER.map(key => (
+                  <span key={key} style={{ color: RARITY[key].color }}>{RARITY[key].label} {RARITY[key].chance}%</span>
+                ))}
+              </div>
+            </section>
           </aside>
         )}
 
@@ -1340,12 +1511,12 @@ export default function DemonGame() {
                   key={x.id}
                   className="skill"
                   onClick={() => useSkill(x.id)}
-                  disabled={x.id === "summon" && ui.souls < 8}
+                  disabled={x.id === "summon" && ui.souls < ui.summonCost}
                   style={{ "--skill": x.color }}
                 >
                   <kbd>{x.key}</kbd>
                   <span className="skill-icon">{x.icon}</span>
-                  <span className="skill-copy"><b>{x.name}</b><small>{x.sub}</small></span>
+                  <span className="skill-copy"><b>{x.name}</b><small>{x.id === "summon" ? `영혼 ${ui.summonCost} · 영구 유지` : x.sub}</small></span>
                   {cd > 0 && <i className="cooldown">{cd.toFixed(1)}</i>}
                 </button>
               );
