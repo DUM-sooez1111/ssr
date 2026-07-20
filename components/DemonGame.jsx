@@ -165,16 +165,24 @@ function drawDiamond(ctx, x, y, r, fill, stroke = "#111") {
 
 function drawPlayer(ctx, p, time, sprite) {
   ctx.save();
-  const stride = p.moving ? Math.sin(time * 12) : Math.sin(time * 4) * .25;
-  ctx.translate(p.x, p.y + stride * 3);
-  ctx.rotate(stride * (p.moving ? .025 : .008));
-  ctx.scale(1 + Math.abs(stride) * .012, 1 - Math.abs(stride) * .01);
+  const stride = p.moving ? Math.sin(time * 13) : Math.sin(time * 4) * .18;
+  const stepLift = p.moving ? Math.abs(Math.sin(time * 13)) : 0;
+  ctx.translate(p.x + stride * (p.moving ? 3.5 : .4), p.y - stepLift * 4);
+  ctx.rotate(stride * (p.moving ? .045 : .006));
+  ctx.scale(1 + stepLift * .018, 1 - stepLift * .025);
   if (sprite?.complete && sprite.naturalWidth > 0) {
     const size = 158;
     ctx.fillStyle = "rgba(0,0,0,.55)";
     ctx.beginPath();
-    ctx.ellipse(0, 27, 48, 13, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 27 + stepLift * 4, 48 - stepLift * 4, 13 - stepLift * 2, 0, 0, Math.PI * 2);
     ctx.fill();
+    if (p.moving) {
+      ctx.fillStyle = "rgba(210,65,41,.42)";
+      ctx.beginPath();
+      ctx.ellipse(-16 + stride * 9, 25, 12, 5, -.2, 0, Math.PI * 2);
+      ctx.ellipse(16 - stride * 9, 25, 12, 5, .2, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.strokeStyle = p.hurt > 0 ? "#fff3d2" : "#d64129";
     ctx.lineWidth = 4;
     ctx.globalAlpha = .82;
@@ -216,10 +224,13 @@ function drawPlayer(ctx, p, time, sprite) {
 
 function drawEnemy(ctx, e, sprites, time) {
   ctx.save();
-  const stride = Math.sin(time * (e.type === "boss" ? 4.5 : 7.5) + (e.phase || 0));
+  const walkSpeed = e.type === "boss" ? 6 : e.type === "tank" || e.type === "paladin" ? 8 : 10;
+  const stride = e.moving ? Math.sin(time * walkSpeed + (e.phase || 0)) : Math.sin(time * 3 + (e.phase || 0)) * .12;
+  const stepLift = e.moving ? Math.abs(Math.sin(time * walkSpeed + (e.phase || 0))) : 0;
   const attackKick = e.attack > .72 ? Math.sin(e.attack * 24) * .035 : 0;
-  ctx.translate(e.x, e.y + stride * (e.type === "boss" ? 2.5 : 2));
-  ctx.rotate(stride * .014 + attackKick);
+  ctx.translate(e.x + stride * (e.moving ? 2.5 : .3), e.y - stepLift * (e.type === "boss" ? 3 : 2.5));
+  ctx.rotate(stride * (e.moving ? .035 : .006) + attackKick);
+  ctx.scale(1 + stepLift * .014, 1 - stepLift * .018);
 
   if (sprites?.complete && sprites.naturalWidth > 0) {
     const spriteCells = {
@@ -238,8 +249,15 @@ function drawEnemy(ctx, e, sprites, time) {
 
     ctx.fillStyle = "rgba(0,0,0,.38)";
     ctx.beginPath();
-    ctx.ellipse(0, e.r + 12, size * .25, size * .09, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, e.r + 12 + stepLift * 3, size * (.25 - stepLift * .018), size * (.09 - stepLift * .01), 0, 0, Math.PI * 2);
     ctx.fill();
+    if (e.moving) {
+      ctx.fillStyle = e.type === "boss" ? "rgba(255,64,38,.38)" : "rgba(218,188,112,.3)";
+      ctx.beginPath();
+      ctx.ellipse(-e.r * .38 + stride * e.r * .22, e.r + 8, e.r * .34, e.r * .13, -.15, 0, Math.PI * 2);
+      ctx.ellipse(e.r * .38 - stride * e.r * .22, e.r + 8, e.r * .34, e.r * .13, .15, 0, Math.PI * 2);
+      ctx.fill();
+    }
     const reinforced = (e.tier || 0) > 0;
     ctx.shadowColor = e.type === "boss" ? "#ff3c25" : reinforced ? "#ffd25c" : e.color;
     ctx.shadowBlur = e.type === "boss" ? 22 : reinforced ? 15 : 9;
@@ -320,10 +338,12 @@ function drawEnemy(ctx, e, sprites, time) {
 
 function drawMinion(ctx, m, sprites, time) {
   ctx.save();
-  const stride = Math.sin(time * 10 + (m.phase || 0));
+  const stride = m.moving ? Math.sin(time * 11 + (m.phase || 0)) : Math.sin(time * 3.5 + (m.phase || 0)) * .12;
+  const stepLift = m.moving ? Math.abs(Math.sin(time * 11 + (m.phase || 0))) : 0;
   const attackKick = m.attack > .35 ? Math.sin(m.attack * 25) * .05 : 0;
-  ctx.translate(m.x, m.y + stride * 2.5);
-  ctx.rotate(stride * .02 + attackKick);
+  ctx.translate(m.x + stride * (m.moving ? 2.8 : .25), m.y - stepLift * 3);
+  ctx.rotate(stride * (m.moving ? .04 : .006) + attackKick);
+  ctx.scale(1 + stepLift * .016, 1 - stepLift * .02);
 
   const visualLevel = Math.max(0, m.level || 0);
   const tier = visualLevel >= 6 ? 2 : visualLevel >= 3 ? 1 : 0;
@@ -332,8 +352,15 @@ function drawMinion(ctx, m, sprites, time) {
 
   ctx.fillStyle = "rgba(0,0,0,.5)";
   ctx.beginPath();
-  ctx.ellipse(0, 18, size * .27, size * .09, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 18 + stepLift * 3, size * (.27 - stepLift * .02), size * (.09 - stepLift * .012), 0, 0, Math.PI * 2);
   ctx.fill();
+  if (m.moving) {
+    ctx.fillStyle = "rgba(70,239,231,.35)";
+    ctx.beginPath();
+    ctx.ellipse(-11 + stride * 7, 17, 9, 4, -.2, 0, Math.PI * 2);
+    ctx.ellipse(11 - stride * 7, 17, 9, 4, .2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   if (sprite?.complete && sprite.naturalWidth > 0) {
     ctx.shadowColor = tier === 2 ? "#ff9d32" : "#63eaff";
@@ -521,7 +548,10 @@ function updateGame(s, dt, keys, mouse, canvas) {
   for (const m of s.minions) {
     m.life -= dt;
     m.hurt = Math.max(0, (m.hurt || 0) - dt);
+    m.moving = false;
     if (m.hp <= 0 || m.dead) continue;
+    const previousX = m.x;
+    const previousY = m.y;
     let target = null;
     let targetDistance = Infinity;
     let bestScore = Infinity;
@@ -554,6 +584,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       }
     }
     keepInArena(m);
+    m.moving = Math.hypot(m.x - previousX, m.y - previousY) > .1;
   }
 
   for (const m of s.minions) {
@@ -572,6 +603,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
 
   for (const e of s.enemies) {
     e.attack -= dt;
+    const previousX = e.x;
+    const previousY = e.y;
     let target = s.player;
     let targetIsMinion = false;
     let nearestMinionDistance = Infinity;
@@ -620,6 +653,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       e.attack = 1.05;
     }
     keepInArena(e);
+    e.moving = Math.hypot(e.x - previousX, e.y - previousY) > .1;
   }
 
   for (const e of s.enemies) {
