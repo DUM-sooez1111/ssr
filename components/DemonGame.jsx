@@ -120,6 +120,8 @@ function readProgress() {
       skillPoints: Math.max(0, Math.floor(Number(saved.skillPoints) || 0)),
       skillTree: Object.fromEntries(Object.keys(makeSkillTree()).map(key => [key, Math.max(0, Math.floor(Number(saved.skillTree?.[key]) || 0))])),
       maxHp: Math.max(100, Math.floor(Number(saved.maxHp) || 100)),
+      equippedWeapon: RARITY[saved.equippedWeapon] ? saved.equippedWeapon : null,
+      equippedArmor: RARITY[saved.equippedArmor] ? saved.equippedArmor : null,
       equippedUndead: RARITY[saved.equippedUndead] ? saved.equippedUndead : null,
       inventory: Array.isArray(saved.inventory)
         ? saved.inventory
@@ -152,6 +154,8 @@ function saveProgress(s) {
       skillPoints: s.skillPoints,
       skillTree: s.skillTree,
       maxHp: s.player.maxHp,
+      equippedWeapon: RARITY[s.equippedWeapon] ? s.equippedWeapon : null,
+      equippedArmor: RARITY[s.equippedArmor] ? s.equippedArmor : null,
       equippedUndead: RARITY[s.equippedUndead] ? s.equippedUndead : null,
       inventory: Array.isArray(s.inventory) ? s.inventory : [],
     }));
@@ -183,6 +187,11 @@ function equippedUndeadPower(s) {
   return RARITY[s.equippedUndead]?.power || 0;
 }
 
+function equippedItemPower(s, category) {
+  const key = category === "weapon" ? "equippedWeapon" : category === "armor" ? "equippedArmor" : "equippedUndead";
+  return RARITY[s[key]]?.power || 0;
+}
+
 function makeState() {
   return {
     started: false,
@@ -198,6 +207,8 @@ function makeState() {
     score: 0,
     souls: 0,
     inventory: [],
+    equippedWeapon: null,
+    equippedArmor: null,
     equippedUndead: null,
     nextEntityId: 1,
     summonCount: 0,
@@ -251,7 +262,73 @@ function drawDiamond(ctx, x, y, r, fill, stroke = "#111") {
   ctx.stroke();
 }
 
-function drawPlayer(ctx, p, time, sprite) {
+function drawPlayerEquipment(ctx, equipment, time) {
+  const armor = RARITY[equipment?.armor];
+  const weapon = RARITY[equipment?.weapon];
+  if (armor) {
+    const tier = armor.skinTier || 0;
+    ctx.save();
+    ctx.globalAlpha = .82;
+    ctx.shadowColor = armor.color;
+    ctx.shadowBlur = 12 + tier * 8;
+    ctx.fillStyle = `${armor.color}aa`;
+    ctx.strokeStyle = armor.color;
+    ctx.lineWidth = 2 + tier;
+    ctx.beginPath();
+    ctx.moveTo(-29 - tier * 3, -52);
+    ctx.lineTo(-18, -17);
+    ctx.lineTo(0, -7 - tier * 2);
+    ctx.lineTo(18, -17);
+    ctx.lineTo(29 + tier * 3, -52);
+    ctx.lineTo(15, -65 - tier * 3);
+    ctx.lineTo(0, -55);
+    ctx.lineTo(-15, -65 - tier * 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-30, -52, 9 + tier * 3, 0, Math.PI * 2);
+    ctx.arc(30, -52, 9 + tier * 3, 0, Math.PI * 2);
+    ctx.fill();
+    if (tier >= 2) {
+      ctx.fillStyle = "#17100d";
+      ctx.beginPath();
+      ctx.moveTo(-40, -61); ctx.lineTo(-53, -76); ctx.lineTo(-32, -68); ctx.closePath();
+      ctx.moveTo(40, -61); ctx.lineTo(53, -76); ctx.lineTo(32, -68); ctx.closePath();
+      ctx.fill();
+      drawDiamond(ctx, 0, -39, 8, armor.color, "#fff0bf");
+    }
+    ctx.restore();
+  }
+  if (weapon) {
+    const tier = weapon.skinTier || 0;
+    const pulse = 1 + Math.sin(time * 6) * .04;
+    ctx.save();
+    ctx.translate(37 + tier * 3, -29);
+    ctx.rotate(.53);
+    ctx.scale(pulse, pulse);
+    ctx.shadowColor = weapon.color;
+    ctx.shadowBlur = 12 + tier * 10;
+    ctx.strokeStyle = weapon.color;
+    ctx.lineWidth = 7 + tier * 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 16); ctx.lineTo(0, -39 - tier * 8); ctx.stroke();
+    ctx.strokeStyle = "#f5f3e8";
+    ctx.lineWidth = 2 + tier;
+    ctx.beginPath();
+    ctx.moveTo(0, 12); ctx.lineTo(0, -38 - tier * 8); ctx.stroke();
+    ctx.fillStyle = weapon.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -53 - tier * 9); ctx.lineTo(8 + tier * 2, -35); ctx.lineTo(-8 - tier * 2, -35); ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#d8aa4d";
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(-13 - tier * 2, 10); ctx.lineTo(13 + tier * 2, 10); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawPlayer(ctx, p, time, sprite, equipment) {
   ctx.save();
   const stride = p.moving ? Math.sin(time * 13) : Math.sin(time * 4) * .18;
   const stepLift = p.moving ? Math.abs(Math.sin(time * 13)) : 0;
@@ -282,6 +359,7 @@ function drawPlayer(ctx, p, time, sprite) {
     ctx.shadowBlur = p.hurt > 0 ? 32 : 20;
     ctx.drawImage(sprite, -size / 2, 32 - size, size, size);
     ctx.shadowBlur = 0;
+    drawPlayerEquipment(ctx, equipment, time);
     ctx.restore();
     return;
   }
@@ -501,8 +579,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.flash = Math.max(0, s.flash - dt * 3);
   s.player.hurt = Math.max(0, s.player.hurt - dt);
   for (const k in s.cooldowns) s.cooldowns[k] = Math.max(0, s.cooldowns[k] - dt);
-  const weaponPower = inventoryPower(s.inventory, "weapon");
-  const armorPower = inventoryPower(s.inventory, "armor");
+  const weaponPower = inventoryPower(s.inventory, "weapon") + equippedItemPower(s, "weapon") * 2;
+  const armorPower = inventoryPower(s.inventory, "armor") + equippedItemPower(s, "armor") * 2;
   const undeadPower = inventoryPower(s.inventory, "undead") + equippedUndeadPower(s) * 2;
   const skillTree = { ...makeSkillTree(), ...(s.skillTree || {}) };
   const playerDamageMultiplier = 1 - Math.min(.65, armorPower * .015 + skillTree.guard * .04);
@@ -884,7 +962,7 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, healLevel: 0, playerLevel: 1, xp: 0, xpNeeded: 80, skillPoints: 0, skillTree: makeSkillTree(), inventory: [], equippedUndead: null, minions: [], summonCost: 8, cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, healLevel: 0, playerLevel: 1, xp: 0, xpNeeded: 80, skillPoints: 0, skillTree: makeSkillTree(), inventory: [], equippedWeapon: null, equippedArmor: null, equippedUndead: null, minions: [], summonCost: 8, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
   const [hasSave, setHasSave] = useState(false);
   const [saveNotice, setSaveNotice] = useState("");
@@ -908,6 +986,8 @@ export default function DemonGame() {
       playerLevel: s.playerLevel || 1, xp: s.xp || 0, xpNeeded: xpNeeded(s.playerLevel || 1),
       skillPoints: s.skillPoints || 0, skillTree: { ...makeSkillTree(), ...(s.skillTree || {}) },
       inventory: Array.isArray(s.inventory) ? s.inventory.map(item => ({ ...item })) : [],
+      equippedWeapon: s.equippedWeapon,
+      equippedArmor: s.equippedArmor,
       equippedUndead: s.equippedUndead,
       minions: s.minions.filter(m => !m.dead).map(m => ({ id: m.id, hp: m.hp, maxHp: m.maxHp, kills: m.kills || 0, level: m.level || 0 })),
       summonCost: 8 + (s.summonCount || 0) * 2,
@@ -947,6 +1027,8 @@ export default function DemonGame() {
       const base = makeState();
       const loaded = payload.state;
       const inventory = Array.isArray(loaded.inventory) ? loaded.inventory : [];
+      const equippedWeapon = RARITY[loaded.equippedWeapon] ? loaded.equippedWeapon : null;
+      const equippedArmor = RARITY[loaded.equippedArmor] ? loaded.equippedArmor : null;
       const equippedUndead = RARITY[loaded.equippedUndead] ? loaded.equippedUndead : null;
       const minionPower = inventoryPower(inventory, "undead") + (RARITY[equippedUndead]?.power || 0) * 2;
       const minionMaxHp = 80 + (loaded.minionLevel || 0) * 30 + minionPower * 15;
@@ -970,6 +1052,8 @@ export default function DemonGame() {
         started: true,
         over: false,
         inventory,
+        equippedWeapon,
+        equippedArmor,
         equippedUndead,
         nextEntityId,
         player: { ...base.player, ...loaded.player },
@@ -994,7 +1078,7 @@ export default function DemonGame() {
     if (skill === "sword" && s.cooldowns.sword <= 0) {
       s.cooldowns.sword = .75;
       const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
-      const weaponPower = inventoryPower(s.inventory, "weapon");
+      const weaponPower = inventoryPower(s.inventory, "weapon") + equippedItemPower(s, "weapon") * 2;
       const angle = Math.atan2(mouseRef.current.y - s.player.y, mouseRef.current.x - s.player.x);
       s.player.angle = angle;
       s.swings.push({ x: s.player.x, y: s.player.y, angle, life: .26, maxLife: .26 });
@@ -1165,20 +1249,28 @@ export default function DemonGame() {
     saveGame(true);
   }, [saveGame, syncUi]);
 
-  const equipUndead = useCallback((rarity) => {
+  const equipInventoryItem = useCallback((category, rarity) => {
     const s = stateRef.current;
-    if (!s.started || s.over || !RARITY[rarity]) return;
-    const owned = s.inventory.some(item => item.category === "undead" && item.rarity === rarity);
+    if (!s.started || s.over || !LOOT_TABLE[category] || !RARITY[rarity]) return;
+    const owned = s.inventory.some(item => item.category === category && item.rarity === rarity);
     if (!owned) return;
-    const oldPower = equippedUndeadPower(s);
-    s.equippedUndead = rarity;
-    const powerGain = (equippedUndeadPower(s) - oldPower) * 2;
-    for (const minion of s.minions) {
-      minion.equippedRarity = rarity;
-      minion.maxHp = Math.max(1, minion.maxHp + powerGain * 15);
-      minion.hp = clamp(minion.hp + Math.max(0, powerGain * 15), 1, minion.maxHp);
+    const oldPower = equippedItemPower(s, category);
+    if (category === "weapon") s.equippedWeapon = rarity;
+    if (category === "armor") s.equippedArmor = rarity;
+    if (category === "undead") s.equippedUndead = rarity;
+    const powerGain = (equippedItemPower(s, category) - oldPower) * 2;
+    if (category === "armor") {
+      s.player.maxHp = Math.max(100, s.player.maxHp + powerGain * 5);
+      s.player.hp = clamp(s.player.hp + Math.max(0, powerGain * 5), 1, s.player.maxHp);
     }
-    setDrawNotice(`${RARITY[rarity].label} 망자 장착 완료`);
+    if (category === "undead") {
+      for (const minion of s.minions) {
+        minion.equippedRarity = rarity;
+        minion.maxHp = Math.max(1, minion.maxHp + powerGain * 15);
+        minion.hp = clamp(minion.hp + Math.max(0, powerGain * 15), 1, minion.maxHp);
+      }
+    }
+    setDrawNotice(`${RARITY[rarity].label} ${LOOT_TABLE[category].label} 장착 완료`);
     window.setTimeout(() => setDrawNotice(""), 1600);
     syncUi();
     saveGame(true);
@@ -1249,6 +1341,8 @@ export default function DemonGame() {
       fresh.skillPoints = progress.skillPoints;
       fresh.skillTree = progress.skillTree;
       fresh.inventory = progress.inventory;
+      fresh.equippedWeapon = progress.equippedWeapon;
+      fresh.equippedArmor = progress.equippedArmor;
       fresh.equippedUndead = progress.equippedUndead;
       fresh.player.maxHp = progress.maxHp;
       fresh.player.hp = progress.maxHp;
@@ -1410,7 +1504,7 @@ export default function DemonGame() {
       const animationTime = settingsRef.current.motion ? s.time : 0;
       for (const m of s.minions) drawMinion(ctx, m, minionSprites, animationTime);
       for (const e of s.enemies) drawEnemy(ctx, e, enemySprites, animationTime);
-      if (s.started) drawPlayer(ctx, s.player, animationTime, playerSprite);
+      if (s.started) drawPlayer(ctx, s.player, animationTime, playerSprite, { weapon: s.equippedWeapon, armor: s.equippedArmor });
       for (const swing of s.swings) {
         const alpha = clamp(swing.life / swing.maxLife, 0, 1);
         ctx.save();
@@ -1486,8 +1580,8 @@ export default function DemonGame() {
   const inventoryItems = ui.inventory.filter(item => item.category === inventoryTab);
   const inventoryPowerTotal = inventoryPower(ui.inventory, inventoryTab);
   const inventoryEffect = {
-    weapon: "전투력당 기본 공격 +2 · 마왕검 +4",
-    armor: "전투력당 피해 감소 1.5% · 최대 HP +5",
+    weapon: "전투력당 기본 공격 +2 · 장착 시 검 외형/추가 2배",
+    armor: "피해 감소 1.5% · 장착 시 갑옷 외형/추가 2배",
     undead: "전투력당 HP +15 · 공격 +4 · 장착 시 추가 2배",
   }[inventoryTab];
 
@@ -1614,21 +1708,25 @@ export default function DemonGame() {
             </div>
             <div className="inventory-list">
               {inventoryItems.length === 0 && <p>아직 획득한 장비가 없습니다.</p>}
-              {inventoryItems.map(item => (
-                <button
-                  type="button"
-                  key={`${item.category}-${item.rarity}`}
-                  className={`inventory-item ${item.category === "undead" && ui.equippedUndead === item.rarity ? "equipped" : ""}`}
-                  onClick={() => item.category === "undead" && equipUndead(item.rarity)}
-                >
-                  <i style={{ background: RARITY[item.rarity].color }} />
-                  <span>
-                    <small style={{ color: RARITY[item.rarity].color }}>{RARITY[item.rarity].label}</small>
-                    <b>{item.name}{item.category === "undead" && ui.equippedUndead === item.rarity ? " · 장착" : ""}</b>
-                  </span>
-                  <strong>×{item.count}</strong>
-                </button>
-              ))}
+              {inventoryItems.map(item => {
+                const equippedRarity = item.category === "weapon" ? ui.equippedWeapon : item.category === "armor" ? ui.equippedArmor : ui.equippedUndead;
+                const equipped = equippedRarity === item.rarity;
+                return (
+                  <button
+                    type="button"
+                    key={`${item.category}-${item.rarity}`}
+                    className={`inventory-item ${equipped ? "equipped" : ""}`}
+                    onClick={() => equipInventoryItem(item.category, item.rarity)}
+                  >
+                    <i style={{ background: RARITY[item.rarity].color }} />
+                    <span>
+                      <small style={{ color: RARITY[item.rarity].color }}>{RARITY[item.rarity].label}</small>
+                      <b>{item.name}{equipped ? " · 장착" : ""}</b>
+                    </span>
+                    <strong>×{item.count}</strong>
+                  </button>
+                );
+              })}
             </div>
             <div className="draw-zone">
               <div className="draw-buttons">
