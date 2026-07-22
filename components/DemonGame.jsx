@@ -11,6 +11,7 @@ const SAVE_KEY = "demon-king-final-stand-save-v1";
 const PROGRESS_KEY = "demon-king-final-stand-progress-v1";
 const SETTINGS_KEY = "demon-king-final-stand-settings-v1";
 const DRAW_COST = 10;
+const MAX_ITEM_LEVEL = 20;
 const MINION_BASE_CAP = 12;
 const STRUCTURES = {
   turret: { label: "영혼 포탑", cost: 25, hp: 180, icon: "▲" },
@@ -143,6 +144,7 @@ function readProgress() {
             rarity: item.rarity,
             name: String(item.name || LOOT_TABLE[item.category].names[item.rarity]),
             count: Math.max(1, Math.floor(Number(item.count) || 1)),
+            level: clamp(Math.floor(Number(item.level) || 1), 1, MAX_ITEM_LEVEL),
           }))
         : [],
     };
@@ -192,7 +194,11 @@ function readSettings() {
 function inventoryPower(inventory, category) {
   return (inventory || [])
     .filter(item => item.category === category)
-    .reduce((total, item) => total + (RARITY[item.rarity]?.power || 1) * (item.count || 1), 0);
+    .reduce((total, item) => {
+      const basePower = RARITY[item.rarity]?.power || 1;
+      const level = Math.max(1, item.level || 1);
+      return total + basePower * ((item.count || 1) + (level - 1) * 3);
+    }, 0);
 }
 
 function equippedUndeadPower(s) {
@@ -201,7 +207,10 @@ function equippedUndeadPower(s) {
 
 function equippedItemPower(s, category) {
   const key = category === "weapon" ? "equippedWeapon" : category === "armor" ? "equippedArmor" : "equippedUndead";
-  return RARITY[s[key]]?.power || 0;
+  const rarity = s[key];
+  const item = s.inventory?.find(entry => entry.category === category && entry.rarity === rarity);
+  const basePower = RARITY[rarity]?.power || 0;
+  return basePower * (1 + Math.max(0, (item?.level || 1) - 1) * .75);
 }
 
 function makeState() {
@@ -280,11 +289,12 @@ function drawPlayerEquipment(ctx, equipment, time) {
   const armor = RARITY[equipment?.armor];
   const weapon = RARITY[equipment?.weapon];
   if (armor) {
-    const tier = armor.skinTier || 0;
+    const armorLevel = Math.max(1, equipment?.armorLevel || 1);
+    const tier = Math.min(2, (armor.skinTier || 0) + Math.floor((armorLevel - 1) / 7));
     ctx.save();
     ctx.globalAlpha = .82;
     ctx.shadowColor = armor.color;
-    ctx.shadowBlur = 12 + tier * 8;
+    ctx.shadowBlur = 12 + tier * 8 + armorLevel;
     ctx.fillStyle = `${armor.color}aa`;
     ctx.strokeStyle = armor.color;
     ctx.lineWidth = 2 + tier;
@@ -315,22 +325,23 @@ function drawPlayerEquipment(ctx, equipment, time) {
     ctx.restore();
   }
   if (weapon) {
-    const tier = weapon.skinTier || 0;
+    const weaponLevel = Math.max(1, equipment?.weaponLevel || 1);
+    const tier = Math.min(2, (weapon.skinTier || 0) + Math.floor((weaponLevel - 1) / 7));
     const pulse = 1 + Math.sin(time * 6) * .04;
     ctx.save();
     ctx.translate(37 + tier * 3, -29);
     ctx.rotate(.53);
     ctx.scale(pulse, pulse);
     ctx.shadowColor = weapon.color;
-    ctx.shadowBlur = 12 + tier * 10;
+    ctx.shadowBlur = 12 + tier * 10 + weaponLevel;
     ctx.strokeStyle = weapon.color;
     ctx.lineWidth = 7 + tier * 2;
     ctx.beginPath();
-    ctx.moveTo(0, 16); ctx.lineTo(0, -39 - tier * 8); ctx.stroke();
+    ctx.moveTo(0, 16); ctx.lineTo(0, -39 - tier * 8 - weaponLevel * .8); ctx.stroke();
     ctx.strokeStyle = "#f5f3e8";
     ctx.lineWidth = 2 + tier;
     ctx.beginPath();
-    ctx.moveTo(0, 12); ctx.lineTo(0, -38 - tier * 8); ctx.stroke();
+    ctx.moveTo(0, 12); ctx.lineTo(0, -38 - tier * 8 - weaponLevel * .8); ctx.stroke();
     ctx.fillStyle = weapon.color;
     ctx.beginPath();
     ctx.moveTo(0, -53 - tier * 9); ctx.lineTo(8 + tier * 2, -35); ctx.lineTo(-8 - tier * 2, -35); ctx.closePath();
@@ -544,7 +555,8 @@ function drawMinion(ctx, m, sprites, time) {
   const visualLevel = Math.max(0, m.level || 0);
   const equipment = RARITY[m.equippedRarity];
   const growthTier = visualLevel + Math.floor((m.kills || 0) / 3) >= 6 ? 2 : visualLevel + Math.floor((m.kills || 0) / 3) >= 3 ? 1 : 0;
-  const tier = m.elite ? 2 : Math.max(growthTier, equipment?.skinTier || 0);
+  const fusionTier = Math.min(2, (equipment?.skinTier || 0) + Math.floor((Math.max(1, m.equippedLevel || 1) - 1) / 7));
+  const tier = m.elite ? 2 : Math.max(growthTier, fusionTier);
   const sprite = sprites?.[tier];
   const size = (82 + tier * 13 + Math.min(18, visualLevel * 1.5 + (m.kills || 0) * .7)) * (m.elite ? 1.28 : 1);
 
@@ -562,7 +574,7 @@ function drawMinion(ctx, m, sprites, time) {
 
   if (sprite?.complete && sprite.naturalWidth > 0) {
     ctx.shadowColor = m.elite ? "#ff2d21" : equipment?.color || (tier === 2 ? "#ff9d32" : "#63eaff");
-    ctx.shadowBlur = (m.elite ? 34 : 10 + tier * 7) + Math.min(14, (m.kills || 0));
+    ctx.shadowBlur = (m.elite ? 34 : 10 + tier * 7) + Math.min(14, (m.kills || 0)) + Math.min(16, m.equippedLevel || 1);
     ctx.globalAlpha = m.hurt > 0 ? .58 : 1;
     ctx.drawImage(sprite, -size / 2, 23 - size, size, size);
     ctx.globalAlpha = 1;
@@ -1211,6 +1223,7 @@ export default function DemonGame() {
           hurt: Number(minion.hurt) || 0,
           kills: Math.max(0, Math.floor(Number(minion.kills) || 0)),
           equippedRarity: RARITY[minion.equippedRarity] ? minion.equippedRarity : equippedUndead,
+          equippedLevel: Math.max(1, Math.floor(Number(minion.equippedLevel) || inventory.find(item => item.category === "undead" && item.rarity === equippedUndead)?.level || 1)),
           phase: Number.isFinite(minion.phase) ? minion.phase : Math.random() * Math.PI * 2,
         }))
         : [];
@@ -1322,6 +1335,7 @@ export default function DemonGame() {
           kills: 0,
           elite,
           equippedRarity: s.equippedUndead,
+          equippedLevel: s.inventory.find(item => item.category === "undead" && item.rarity === s.equippedUndead)?.level || 1,
           hp: finalMaxHp,
           maxHp: finalMaxHp,
           hurt: 0,
@@ -1413,7 +1427,7 @@ export default function DemonGame() {
     s.souls -= DRAW_COST;
     const owned = s.inventory.find(item => item.category === category && item.rarity === rarity);
     if (owned) owned.count += 1;
-    else s.inventory.push({ category, rarity, name: itemName, count: 1 });
+    else s.inventory.push({ category, rarity, name: itemName, count: 1, level: 1 });
 
     if (category === "armor") {
       s.player.maxHp += power * 5;
@@ -1446,14 +1460,43 @@ export default function DemonGame() {
       s.player.hp = clamp(s.player.hp + Math.max(0, powerGain * 5), 1, s.player.maxHp);
     }
     if (category === "undead") {
+      const equippedItem = s.inventory.find(item => item.category === "undead" && item.rarity === rarity);
       for (const minion of s.minions) {
         minion.equippedRarity = rarity;
+        minion.equippedLevel = equippedItem?.level || 1;
         minion.maxHp = Math.max(1, minion.maxHp + powerGain * 15);
         minion.hp = clamp(minion.hp + Math.max(0, powerGain * 15), 1, minion.maxHp);
       }
     }
     setDrawNotice(`${RARITY[rarity].label} ${LOOT_TABLE[category].label} 장착 완료`);
     window.setTimeout(() => setDrawNotice(""), 1600);
+    syncUi();
+    saveGame(true);
+  }, [saveGame, syncUi]);
+
+  const fuseInventoryItem = useCallback((category, rarity) => {
+    const s = stateRef.current;
+    if (!s.started || s.over) return;
+    const item = s.inventory.find(entry => entry.category === category && entry.rarity === rarity);
+    if (!item || item.count < 3 || (item.level || 1) >= MAX_ITEM_LEVEL) return;
+    const oldPower = inventoryPower(s.inventory, category) + equippedItemPower(s, category) * 2;
+    item.count -= 2;
+    item.level = Math.min(MAX_ITEM_LEVEL, (item.level || 1) + 1);
+    const newPower = inventoryPower(s.inventory, category) + equippedItemPower(s, category) * 2;
+    const powerGain = Math.max(0, newPower - oldPower);
+    if (category === "armor") {
+      s.player.maxHp += powerGain * 5;
+      s.player.hp = Math.min(s.player.maxHp, s.player.hp + powerGain * 5);
+    }
+    if (category === "undead") {
+      for (const minion of s.minions) {
+        if (s.equippedUndead === rarity) minion.equippedLevel = item.level;
+        minion.maxHp += powerGain * 15;
+        minion.hp += powerGain * 15;
+      }
+    }
+    setDrawNotice(`${RARITY[rarity].label} ${LOOT_TABLE[category].label} LV.${item.level} 합성!`);
+    window.setTimeout(() => setDrawNotice(""), 1800);
     syncUi();
     saveGame(true);
   }, [saveGame, syncUi]);
@@ -1720,7 +1763,12 @@ export default function DemonGame() {
       }
       for (const m of s.minions) drawMinion(ctx, m, minionSprites, animationTime);
       for (const e of s.enemies) drawEnemy(ctx, e, enemySprites, animationTime);
-      if (s.started) drawPlayer(ctx, s.player, animationTime, playerSprite, { weapon: s.equippedWeapon, armor: s.equippedArmor });
+      if (s.started) drawPlayer(ctx, s.player, animationTime, playerSprite, {
+        weapon: s.equippedWeapon,
+        armor: s.equippedArmor,
+        weaponLevel: s.inventory.find(item => item.category === "weapon" && item.rarity === s.equippedWeapon)?.level || 1,
+        armorLevel: s.inventory.find(item => item.category === "armor" && item.rarity === s.equippedArmor)?.level || 1,
+      });
       for (const swing of s.swings) {
         const alpha = clamp(swing.life / swing.maxLife, 0, 1);
         ctx.save();
@@ -1956,19 +2004,28 @@ export default function DemonGame() {
                 const equippedRarity = item.category === "weapon" ? ui.equippedWeapon : item.category === "armor" ? ui.equippedArmor : ui.equippedUndead;
                 const equipped = equippedRarity === item.rarity;
                 return (
-                  <button
-                    type="button"
-                    key={`${item.category}-${item.rarity}`}
-                    className={`inventory-item ${equipped ? "equipped" : ""}`}
-                    onClick={() => equipInventoryItem(item.category, item.rarity)}
-                  >
-                    <i style={{ background: RARITY[item.rarity].color }} />
-                    <span>
-                      <small style={{ color: RARITY[item.rarity].color }}>{RARITY[item.rarity].label}</small>
-                      <b>{item.name}{equipped ? " · 장착" : ""}</b>
-                    </span>
-                    <strong>×{item.count}</strong>
-                  </button>
+                  <div className="inventory-entry" key={`${item.category}-${item.rarity}`}>
+                    <button
+                      type="button"
+                      className={`inventory-item ${equipped ? "equipped" : ""}`}
+                      onClick={() => equipInventoryItem(item.category, item.rarity)}
+                    >
+                      <i style={{ background: RARITY[item.rarity].color }} />
+                      <span>
+                        <small style={{ color: RARITY[item.rarity].color }}>{RARITY[item.rarity].label} · LV.{item.level || 1}</small>
+                        <b>{item.name}{equipped ? " · 장착" : ""}</b>
+                      </span>
+                      <strong>×{item.count}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className="fusion-button"
+                      disabled={item.count < 3 || (item.level || 1) >= MAX_ITEM_LEVEL}
+                      onClick={() => fuseInventoryItem(item.category, item.rarity)}
+                    >
+                      {(item.level || 1) >= MAX_ITEM_LEVEL ? "MAX" : "합성"}
+                    </button>
+                  </div>
                 );
               })}
             </div>
