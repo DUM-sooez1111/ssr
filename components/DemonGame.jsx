@@ -11,6 +11,12 @@ const SAVE_KEY = "demon-king-final-stand-save-v1";
 const PROGRESS_KEY = "demon-king-final-stand-progress-v1";
 const SETTINGS_KEY = "demon-king-final-stand-settings-v1";
 const DRAW_COST = 10;
+const MINION_BASE_CAP = 12;
+const STRUCTURES = {
+  turret: { label: "영혼 포탑", cost: 25, hp: 180, icon: "▲" },
+  wall: { label: "망자의 벽", cost: 18, hp: 420, icon: "▰" },
+  factory: { label: "영혼 공장", cost: 40, hp: 240, icon: "◆" },
+};
 
 const LOOT_TABLE = {
   weapon: {
@@ -60,6 +66,8 @@ const SKILL_BRANCHES = [
       { id: "rage", name: "마왕의 격노", icon: "🔥", max: 5, description: "기본 공격 피해 +8%" },
       { id: "blade", name: "파멸의 검", icon: "🗡", max: 3, requires: ["rage", 2], description: "마왕검 피해 +12" },
       { id: "inferno", name: "지옥의 핵", icon: "☄", max: 3, requires: ["blade", 2], description: "지옥불 피해 +20" },
+      { id: "execution", name: "처형자", icon: "☠", max: 3, requires: ["inferno", 2], description: "약한 적에게 추가 피해" },
+      { id: "haste", name: "광란", icon: "⚡", max: 3, requires: ["rage", 3], description: "기본 공격 속도 증가" },
     ],
   },
   {
@@ -68,6 +76,8 @@ const SKILL_BRANCHES = [
       { id: "vitality", name: "불멸의 육체", icon: "✚", max: 5, description: "최대 체력 +10" },
       { id: "guard", name: "어둠의 방벽", icon: "⬟", max: 3, requires: ["vitality", 2], description: "받는 피해 4% 감소" },
       { id: "fortress", name: "왕좌의 수호자", icon: "♜", max: 1, requires: ["guard", 3], description: "최대 체력 +50" },
+      { id: "recovery", name: "불사 재생", icon: "♥", max: 3, requires: ["vitality", 3], description: "초당 체력 회복" },
+      { id: "thorns", name: "가시 갑주", icon: "✹", max: 3, requires: ["guard", 2], description: "근접 공격자에게 반사 피해" },
     ],
   },
   {
@@ -76,6 +86,8 @@ const SKILL_BRANCHES = [
       { id: "harvest", name: "영혼 수확", icon: "◈", max: 5, description: "영혼 획득량 +10%" },
       { id: "commander", name: "망자의 지휘관", icon: "♟", max: 3, requires: ["harvest", 2], description: "망자 공격·체력 증가" },
       { id: "fortune", name: "마왕의 행운", icon: "✦", max: 3, requires: ["commander", 1], description: "고등급 뽑기 확률 증가" },
+      { id: "legion", name: "불사의 군단", icon: "♚", max: 3, requires: ["commander", 2], description: "망자 상한 +3" },
+      { id: "architect", name: "지옥 건축술", icon: "⌂", max: 3, requires: ["harvest", 3], description: "구조물 효율 증가" },
     ],
   },
 ];
@@ -95,7 +107,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 const arenaXBounds = (y) => {
   const depth = clamp((y - 180) / 675, 0, 1);
-  const inset = 360 - depth * 140;
+  const inset = 305 - depth * 175;
   return { min: inset, max: W - inset };
 };
 
@@ -233,6 +245,8 @@ function makeState() {
     swings: [],
     soulOrbs: [],
     xpOrbs: [],
+    structures: [],
+    structureBeams: [],
   };
 }
 
@@ -332,8 +346,9 @@ function drawPlayer(ctx, p, time, sprite, equipment) {
   ctx.save();
   const stride = p.moving ? Math.sin(time * 13) : Math.sin(time * 4) * .18;
   const stepLift = p.moving ? Math.abs(Math.sin(time * 13)) : 0;
-  ctx.translate(p.x + stride * (p.moving ? 3.5 : .4), p.y - stepLift * 4);
-  ctx.rotate(stride * (p.moving ? .045 : .006));
+  const attackMotion = clamp((p.attackMotion || 0) / .28, 0, 1);
+  ctx.translate(p.x + stride * (p.moving ? 3.5 : .4) + attackMotion * 5, p.y - stepLift * 4 - Math.sin(attackMotion * Math.PI) * 3);
+  ctx.rotate(stride * (p.moving ? .045 : .006) + Math.sin(attackMotion * Math.PI) * .1);
   ctx.scale(1 + stepLift * .018, 1 - stepLift * .025);
   if (sprite?.complete && sprite.naturalWidth > 0) {
     const size = 158;
@@ -393,8 +408,9 @@ function drawEnemy(ctx, e, sprites, time) {
   const walkSpeed = e.type === "boss" ? 6 : e.type === "tank" || e.type === "paladin" ? 8 : 10;
   const stride = e.moving ? Math.sin(time * walkSpeed + (e.phase || 0)) : Math.sin(time * 3 + (e.phase || 0)) * .12;
   const stepLift = e.moving ? Math.abs(Math.sin(time * walkSpeed + (e.phase || 0))) : 0;
-  const attackKick = e.attack > .72 ? Math.sin(e.attack * 24) * .035 : 0;
-  ctx.translate(e.x + stride * (e.moving ? 2.5 : .3), e.y - stepLift * (e.type === "boss" ? 3 : 2.5));
+  const attackProgress = clamp((e.attackMotion || 0) / .28, 0, 1);
+  const attackKick = Math.sin(attackProgress * Math.PI) * (e.type === "boss" ? .15 : .1);
+  ctx.translate(e.x + stride * (e.moving ? 2.5 : .3) + attackProgress * 5, e.y - stepLift * (e.type === "boss" ? 3 : 2.5));
   ctx.rotate(stride * (e.moving ? .035 : .006) + attackKick);
   ctx.scale(1 + stepLift * .014, 1 - stepLift * .018);
 
@@ -445,6 +461,19 @@ function drawEnemy(ctx, e, sprites, time) {
       ctx.font = "700 13px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(`★${e.tier}`, 0, barY - 7);
+    }
+    if (attackProgress > 0 && e.type !== "archer") {
+      ctx.save();
+      ctx.rotate((e.attackAngle || 0) - Math.PI / 2);
+      ctx.globalAlpha = attackProgress;
+      ctx.strokeStyle = e.type === "boss" ? "#ff3b28" : reinforced ? "#ffe078" : "#f4dfb0";
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.shadowBlur = e.type === "boss" ? 24 : 12;
+      ctx.lineWidth = e.type === "boss" ? 11 : 5;
+      ctx.beginPath();
+      ctx.arc(0, 0, e.r + (e.type === "boss" ? 62 : 34), -1, .85);
+      ctx.stroke();
+      ctx.restore();
     }
     ctx.restore();
     return;
@@ -506,7 +535,8 @@ function drawMinion(ctx, m, sprites, time) {
   ctx.save();
   const stride = m.moving ? Math.sin(time * 11 + (m.phase || 0)) : Math.sin(time * 3.5 + (m.phase || 0)) * .12;
   const stepLift = m.moving ? Math.abs(Math.sin(time * 11 + (m.phase || 0))) : 0;
-  const attackKick = m.attack > .35 ? Math.sin(m.attack * 25) * .05 : 0;
+  const attackProgress = clamp((m.attackMotion || 0) / .24, 0, 1);
+  const attackKick = Math.sin(attackProgress * Math.PI) * .13;
   ctx.translate(m.x + stride * (m.moving ? 2.8 : .25), m.y - stepLift * 3);
   ctx.rotate(stride * (m.moving ? .04 : .006) + attackKick);
   ctx.scale(1 + stepLift * .016, 1 - stepLift * .02);
@@ -514,9 +544,9 @@ function drawMinion(ctx, m, sprites, time) {
   const visualLevel = Math.max(0, m.level || 0);
   const equipment = RARITY[m.equippedRarity];
   const growthTier = visualLevel + Math.floor((m.kills || 0) / 3) >= 6 ? 2 : visualLevel + Math.floor((m.kills || 0) / 3) >= 3 ? 1 : 0;
-  const tier = Math.max(growthTier, equipment?.skinTier || 0);
+  const tier = m.elite ? 2 : Math.max(growthTier, equipment?.skinTier || 0);
   const sprite = sprites?.[tier];
-  const size = 82 + tier * 13 + Math.min(18, visualLevel * 1.5 + (m.kills || 0) * .7);
+  const size = (82 + tier * 13 + Math.min(18, visualLevel * 1.5 + (m.kills || 0) * .7)) * (m.elite ? 1.28 : 1);
 
   ctx.fillStyle = "rgba(0,0,0,.5)";
   ctx.beginPath();
@@ -531,8 +561,8 @@ function drawMinion(ctx, m, sprites, time) {
   }
 
   if (sprite?.complete && sprite.naturalWidth > 0) {
-    ctx.shadowColor = equipment?.color || (tier === 2 ? "#ff9d32" : "#63eaff");
-    ctx.shadowBlur = 10 + tier * 7 + Math.min(14, (m.kills || 0));
+    ctx.shadowColor = m.elite ? "#ff2d21" : equipment?.color || (tier === 2 ? "#ff9d32" : "#63eaff");
+    ctx.shadowBlur = (m.elite ? 34 : 10 + tier * 7) + Math.min(14, (m.kills || 0));
     ctx.globalAlpha = m.hurt > 0 ? .58 : 1;
     ctx.drawImage(sprite, -size / 2, 23 - size, size, size);
     ctx.globalAlpha = 1;
@@ -552,6 +582,20 @@ function drawMinion(ctx, m, sprites, time) {
     ctx.fillRect(3, -5, 5, 5);
   }
 
+  if (attackProgress > 0) {
+    ctx.save();
+    ctx.rotate((m.attackAngle || 0) - Math.PI / 2);
+    ctx.globalAlpha = attackProgress;
+    ctx.shadowColor = equipment?.color || "#69f3ed";
+    ctx.shadowBlur = 16;
+    ctx.strokeStyle = equipment?.color || "#bffcff";
+    ctx.lineWidth = 5 + tier * 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 38 + tier * 8, -.95, .9);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   const barWidth = 48 + tier * 7;
   const barY = 28;
   ctx.fillStyle = "rgba(5,13,16,.9)";
@@ -561,7 +605,45 @@ function drawMinion(ctx, m, sprites, time) {
   ctx.fillStyle = equipment?.color || (tier === 2 ? "#ffd66d" : "#b7fbff");
   ctx.font = "800 10px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(`망자 LV.${visualLevel} · 처치 ${m.kills || 0}`, 0, barY + 18);
+  ctx.fillText(`${m.elite ? "★ 엘리트 " : ""}망자 LV.${visualLevel} · 처치 ${m.kills || 0}`, 0, barY + 18);
+  ctx.restore();
+}
+
+function drawStructure(ctx, structure, time) {
+  ctx.save();
+  ctx.translate(structure.x, structure.y);
+  const pulse = 1 + Math.sin(time * 3 + (structure.phase || 0)) * .04;
+  ctx.fillStyle = "rgba(0,0,0,.5)";
+  ctx.beginPath(); ctx.ellipse(0, 20, 34, 10, 0, 0, Math.PI * 2); ctx.fill();
+  if (structure.type === "wall") {
+    ctx.shadowColor = "#54c7d4"; ctx.shadowBlur = 10;
+    ctx.fillStyle = structure.hurt > 0 ? "#d9ffff" : "#26373e";
+    ctx.strokeStyle = "#6eb7c1"; ctx.lineWidth = 3;
+    ctx.fillRect(-38, -22, 76, 40); ctx.strokeRect(-38, -22, 76, 40);
+    ctx.fillStyle = "#10191d";
+    for (let x = -30; x <= 26; x += 14) ctx.fillRect(x, -30, 9, 12);
+  } else if (structure.type === "turret") {
+    ctx.scale(pulse, pulse);
+    ctx.shadowColor = "#d768ff"; ctx.shadowBlur = 18;
+    ctx.fillStyle = structure.hurt > 0 ? "#fff" : "#242033";
+    ctx.strokeStyle = "#b45be1"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.rotate(structure.angle || -Math.PI / 2);
+    ctx.fillStyle = "#d6a9f3"; ctx.fillRect(0, -7, 42, 14);
+    drawDiamond(ctx, 43, 0, 10, "#f0c8ff", "#8c36b8");
+  } else {
+    ctx.scale(pulse, pulse);
+    ctx.shadowColor = "#5be9e5"; ctx.shadowBlur = 20;
+    ctx.fillStyle = structure.hurt > 0 ? "#fff" : "#172d30";
+    drawDiamond(ctx, 0, -2, 31, ctx.fillStyle, "#64d9dc");
+    ctx.fillStyle = "#9df8f4"; ctx.font = "900 20px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("◈", 0, 5);
+  }
+  ctx.shadowBlur = 0;
+  const width = structure.type === "wall" ? 74 : 58;
+  ctx.fillStyle = "rgba(3,8,10,.9)"; ctx.fillRect(-width / 2, 31, width, 6);
+  ctx.fillStyle = structure.type === "factory" ? "#54e8dd" : structure.type === "turret" ? "#c05fea" : "#70c3ce";
+  ctx.fillRect(-width / 2, 31, width * clamp(structure.hp / structure.maxHp, 0, 1), 6);
   ctx.restore();
 }
 
@@ -578,12 +660,14 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.shake = Math.max(0, s.shake - dt * 18);
   s.flash = Math.max(0, s.flash - dt * 3);
   s.player.hurt = Math.max(0, s.player.hurt - dt);
+  s.player.attackMotion = Math.max(0, (s.player.attackMotion || 0) - dt);
   for (const k in s.cooldowns) s.cooldowns[k] = Math.max(0, s.cooldowns[k] - dt);
   const weaponPower = inventoryPower(s.inventory, "weapon") + equippedItemPower(s, "weapon") * 2;
   const armorPower = inventoryPower(s.inventory, "armor") + equippedItemPower(s, "armor") * 2;
   const undeadPower = inventoryPower(s.inventory, "undead") + equippedUndeadPower(s) * 2;
   const skillTree = { ...makeSkillTree(), ...(s.skillTree || {}) };
   const playerDamageMultiplier = 1 - Math.min(.65, armorPower * .015 + skillTree.guard * .04);
+  if (skillTree.recovery > 0) s.player.hp = Math.min(s.player.maxHp, s.player.hp + skillTree.recovery * .7 * dt);
 
   if (s.waveTimer > 24) {
     const completedWave = s.wave;
@@ -621,12 +705,14 @@ function updateGame(s, dt, keys, mouse, canvas) {
   s.player.moving = moveX !== 0 || moveY !== 0;
   s.player.x += moveX / len * 255 * dt;
   s.player.y += moveY / len * 255 * dt;
-  keepInArena(s.player, 765);
+  keepInArena(s.player, 840);
   s.player.angle = Math.atan2(mouse.y - s.player.y, mouse.x - s.player.x);
 
   const shoot = () => {
     if (s.cooldowns.shot > 0) return;
-    s.cooldowns.shot = .28;
+    s.cooldowns.shot = Math.max(.12, .28 - skillTree.haste * .035);
+    s.player.attackMotion = .18;
+    s.player.attackKind = "shot";
     const a = s.player.angle;
     s.shots.push({
       x: s.player.x + Math.cos(a) * 30,
@@ -635,6 +721,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       vy: Math.sin(a) * 620,
       life: 1.35,
       damage: (24 + s.magicLevel * 6 + s.swordLevel * 5 + weaponPower * 2) * (1 + skillTree.rage * .08),
+      execution: skillTree.execution,
     });
     addParticles(s, s.player.x, s.player.y, "#d574ff", 5, .4);
   };
@@ -688,7 +775,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
     shot.x += shot.vx * dt; shot.y += shot.vy * dt; shot.life -= dt;
     for (const e of s.enemies) {
       if (shot.life > 0 && dist(shot, e) < e.r + 10) {
-        hurtEnemy(e, shot.damage, "#d87cff"); shot.life = 0;
+        const executeMultiplier = shot.execution > 0 && e.hp / e.maxHp < .35 ? 1 + shot.execution * .18 : 1;
+        hurtEnemy(e, shot.damage * executeMultiplier, "#d87cff"); shot.life = 0;
       }
     }
   }
@@ -705,6 +793,14 @@ function updateGame(s, dt, keys, mouse, canvas) {
         target.hurt = .18;
         addParticles(s, target.x, target.y, "#68e8ef", 8, .5);
       }
+    } else if (shot.life > 0 && shot.structureId) {
+      const target = s.structures.find(structure => structure.id === shot.structureId && structure.hp > 0);
+      if (target && dist(shot, target) < 35) {
+        shot.life = 0;
+        target.hp -= shot.damage;
+        target.hurt = .18;
+        addParticles(s, target.x, target.y, "#8cced6", 8, .5);
+      }
     } else if (shot.life > 0 && dist(shot, s.player) < 25) {
       shot.life = 0;
       s.player.hp -= shot.damage * playerDamageMultiplier;
@@ -716,6 +812,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
 
   for (const m of s.minions) {
     m.hurt = Math.max(0, (m.hurt || 0) - dt);
+    m.attackMotion = Math.max(0, (m.attackMotion || 0) - dt);
     m.moving = false;
     if (m.hp <= 0 || m.dead) continue;
     const previousX = m.x;
@@ -741,9 +838,11 @@ function updateGame(s, dt, keys, mouse, canvas) {
       if (targetDistance < 35 + m.level * 2 && m.attack <= 0) {
         const knightAdvantage = target.type === "knight";
         const damage = (knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10)
-          + undeadPower * 4 + (m.kills || 0) * 2 + skillTree.commander * 10;
+          + undeadPower * 4 + (m.kills || 0) * 2 + skillTree.commander * 10 + (m.elite ? 320 : 0);
         const wasAlive = target.hp > 0;
         hurtEnemy(target, damage, knightAdvantage ? "#f5d56a" : "#90e2b1");
+        m.attackMotion = .24;
+        m.attackAngle = a;
         if (wasAlive && target.hp <= 0 && !target.minionKillClaimed) {
           target.minionKillClaimed = true;
           m.kills = (m.kills || 0) + 1;
@@ -811,12 +910,50 @@ function updateGame(s, dt, keys, mouse, canvas) {
     s.rings.push({ x: m.x, y: m.y, r: 8, life: .55, color: "#65eaff" });
   }
 
+  for (const structure of s.structures) {
+    structure.hurt = Math.max(0, (structure.hurt || 0) - dt);
+    if (structure.hp <= 0) continue;
+    const architect = skillTree.architect || 0;
+    if (structure.type === "turret") {
+      structure.cooldown = Math.max(0, (structure.cooldown || 0) - dt);
+      let target = null;
+      let nearest = 460;
+      for (const enemy of s.enemies) {
+        if (enemy.hp <= 0) continue;
+        const d = dist(structure, enemy);
+        if (d < nearest) { nearest = d; target = enemy; }
+      }
+      if (target) {
+        structure.angle = Math.atan2(target.y - structure.y, target.x - structure.x);
+        if (structure.cooldown <= 0) {
+          const damage = 34 + architect * 15;
+          hurtEnemy(target, damage, "#d768ff");
+          s.structureBeams.push({ x1: structure.x, y1: structure.y, x2: target.x, y2: target.y, life: .13, maxLife: .13 });
+          structure.cooldown = Math.max(.35, .82 - architect * .1);
+        }
+      }
+    }
+    if (structure.type === "factory") {
+      structure.production = (structure.production || 0) - dt;
+      if (structure.production <= 0) {
+        s.soulOrbs.push({ x: structure.x, y: structure.y - 25, value: 2 + architect, life: 18, phase: Math.random() * Math.PI * 2 });
+        structure.production = Math.max(5, 11 - architect * 1.5);
+        addParticles(s, structure.x, structure.y, "#5be9e5", 10, .55);
+      }
+    }
+  }
+  for (const beam of s.structureBeams) beam.life -= dt;
+  s.structureBeams = s.structureBeams.filter(beam => beam.life > 0);
+
   for (const e of s.enemies) {
+    if (e.hp <= 0) continue;
     e.attack -= dt;
+    e.attackMotion = Math.max(0, (e.attackMotion || 0) - dt);
     const previousX = e.x;
     const previousY = e.y;
     let target = s.player;
     let targetIsMinion = false;
+    let targetIsStructure = false;
     let nearestMinionDistance = Infinity;
     for (const minion of s.minions) {
       if (minion.dead || minion.hp <= 0) continue;
@@ -825,6 +962,19 @@ function updateGame(s, dt, keys, mouse, canvas) {
         nearestMinionDistance = d;
         target = minion;
         targetIsMinion = true;
+      }
+    }
+    if (!targetIsMinion) {
+      let bestStructureScore = Infinity;
+      for (const structure of s.structures) {
+        if (structure.hp <= 0) continue;
+        const d = dist(e, structure);
+        const score = d - (structure.type === "wall" ? 150 : 0);
+        if (score < bestStructureScore) {
+          bestStructureScore = score;
+          target = structure;
+          targetIsStructure = true;
+        }
       }
     }
     const dp = dist(e, target);
@@ -843,28 +993,43 @@ function updateGame(s, dt, keys, mouse, canvas) {
           x: e.x, y: e.y, vx: Math.cos(a) * arrowSpeed, vy: Math.sin(a) * arrowSpeed,
           life: 2.1, damage: e.damage, type: "arrow",
           targetId: targetIsMinion ? target.id : null,
+          structureId: targetIsStructure ? target.id : null,
         });
+        e.attackMotion = .28;
+        e.attackAngle = a;
         e.attack = 1.55;
       }
-    } else if (dp > e.r + (targetIsMinion ? 22 : 27)) {
+    } else if (dp > e.r + (targetIsMinion ? 22 : targetIsStructure ? 34 : 27)) {
       e.x += Math.cos(a) * e.speed * dt;
       e.y += Math.sin(a) * e.speed * dt;
     } else if (e.attack <= 0) {
-      if (targetIsMinion) {
+      if (targetIsMinion || targetIsStructure) {
         target.hp -= e.damage;
         target.hurt = .18;
-        addParticles(s, target.x, target.y, "#65eaff", 9, .6);
+        addParticles(s, target.x, target.y, targetIsStructure ? "#8cced6" : "#65eaff", 9, .6);
       } else {
         s.player.hp -= e.damage * playerDamageMultiplier;
+        if (skillTree.thorns > 0) e.hp -= skillTree.thorns * 9;
         s.player.hurt = .18;
         s.shake = 7;
         addParticles(s, s.player.x, s.player.y, "#ff3333", 10, .7);
       }
+      e.attackMotion = .28;
+      e.attackAngle = a;
       e.attack = 1.05;
     }
     keepInArena(e);
     e.moving = Math.hypot(e.x - previousX, e.y - previousY) > .1;
   }
+
+  for (const structure of s.structures) {
+    if (structure.hp <= 0 && !structure.dead) {
+      structure.dead = true;
+      addParticles(s, structure.x, structure.y, "#6bbcc7", 22, 1);
+      s.rings.push({ x: structure.x, y: structure.y, r: 8, life: .6, color: "#6bbcc7" });
+    }
+  }
+  s.structures = s.structures.filter(structure => !structure.dead);
 
   for (const e of s.enemies) {
     if (e.hp <= 0 && !e.dead) {
@@ -962,7 +1127,7 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, healLevel: 0, playerLevel: 1, xp: 0, xpNeeded: 80, skillPoints: 0, skillTree: makeSkillTree(), inventory: [], equippedWeapon: null, equippedArmor: null, equippedUndead: null, minions: [], summonCost: 8, cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, healLevel: 0, playerLevel: 1, xp: 0, xpNeeded: 80, skillPoints: 0, skillTree: makeSkillTree(), inventory: [], equippedWeapon: null, equippedArmor: null, equippedUndead: null, minions: [], minionCap: MINION_BASE_CAP, structures: [], summonCost: 8, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
   const [hasSave, setHasSave] = useState(false);
   const [saveNotice, setSaveNotice] = useState("");
@@ -975,6 +1140,7 @@ export default function DemonGame() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({ motion: true, screenShake: true, autoOpenInventory: true });
   const settingsRef = useRef(settings);
+  const [buildMode, setBuildMode] = useState(null);
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
@@ -990,6 +1156,8 @@ export default function DemonGame() {
       equippedArmor: s.equippedArmor,
       equippedUndead: s.equippedUndead,
       minions: s.minions.filter(m => !m.dead).map(m => ({ id: m.id, hp: m.hp, maxHp: m.maxHp, kills: m.kills || 0, level: m.level || 0 })),
+      minionCap: MINION_BASE_CAP + (s.skillTree?.legion || 0) * 3,
+      structures: s.structures.filter(structure => !structure.dead).map(structure => ({ id: structure.id, type: structure.type, hp: structure.hp, maxHp: structure.maxHp })),
       summonCost: 8 + (s.summonCount || 0) * 2,
       cooldowns: { ...s.cooldowns },
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
@@ -1062,6 +1230,8 @@ export default function DemonGame() {
         minions,
         soulOrbs: Array.isArray(loaded.soulOrbs) ? loaded.soulOrbs : [],
         xpOrbs: Array.isArray(loaded.xpOrbs) ? loaded.xpOrbs : [],
+        structures: Array.isArray(loaded.structures) ? loaded.structures : [],
+        structureBeams: [],
       };
       syncUi();
       canvasRef.current?.focus();
@@ -1077,6 +1247,8 @@ export default function DemonGame() {
     if (!s.started || s.over) return;
     if (skill === "sword" && s.cooldowns.sword <= 0) {
       s.cooldowns.sword = .75;
+      s.player.attackMotion = .28;
+      s.player.attackKind = "sword";
       const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
       const weaponPower = inventoryPower(s.inventory, "weapon") + equippedItemPower(s, "weapon") * 2;
       const angle = Math.atan2(mouseRef.current.y - s.player.y, mouseRef.current.x - s.player.x);
@@ -1094,6 +1266,8 @@ export default function DemonGame() {
       s.shake = 4;
     }
     if (skill === "slash" && s.cooldowns.slash <= 0) {
+      s.player.attackMotion = .3;
+      s.player.attackKind = "slash";
       const slashCooldown = Math.max(1.1, 2 - s.magicLevel * .08);
       const slashRadius = 135 + s.magicLevel * 4;
       const slashDamage = 58 + s.magicLevel * 12;
@@ -1108,6 +1282,8 @@ export default function DemonGame() {
       s.shake = 5;
     }
     if (skill === "fire" && s.cooldowns.fire <= 0) {
+      s.player.attackMotion = .32;
+      s.player.attackKind = "fire";
       const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
       const fireCooldown = Math.max(4, 7 - s.magicLevel * .25);
       const fireRadius = 170 + s.magicLevel * 6;
@@ -1124,13 +1300,19 @@ export default function DemonGame() {
     if (skill === "summon") {
       const summonCost = 8 + (s.summonCount || 0) * 2;
       if (s.souls < summonCost) return;
+      const minionCap = MINION_BASE_CAP + (s.skillTree?.legion || 0) * 3;
+      const availableSlots = minionCap - s.minions.filter(minion => !minion.dead && minion.hp > 0).length;
+      if (availableSlots <= 0) return;
       s.souls -= summonCost;
       s.summonCount = (s.summonCount || 0) + 1;
       const undeadPower = inventoryPower(s.inventory, "undead") + equippedUndeadPower(s) * 2;
       const commanderLevel = s.skillTree?.commander || 0;
       const maxHp = 80 + s.minionLevel * 30 + undeadPower * 15 + commanderLevel * 25;
-      for (let i = 0; i < 3; i++) {
+      const summonAmount = Math.min(3, availableSlots);
+      for (let i = 0; i < summonAmount; i++) {
         const a = i / 3 * Math.PI * 2;
+        const elite = Math.random() < .00001;
+        const finalMaxHp = elite ? maxHp * 10 : maxHp;
         s.minions.push({
           id: s.nextEntityId++,
           x: s.player.x + Math.cos(a) * 55,
@@ -1138,9 +1320,10 @@ export default function DemonGame() {
           attack: 0,
           level: s.minionLevel,
           kills: 0,
+          elite,
           equippedRarity: s.equippedUndead,
-          hp: maxHp,
-          maxHp,
+          hp: finalMaxHp,
+          maxHp: finalMaxHp,
           hurt: 0,
           phase: Math.random() * Math.PI * 2,
         });
@@ -1272,6 +1455,35 @@ export default function DemonGame() {
     }
     setDrawNotice(`${RARITY[rarity].label} ${LOOT_TABLE[category].label} 장착 완료`);
     window.setTimeout(() => setDrawNotice(""), 1600);
+    syncUi();
+    saveGame(true);
+  }, [saveGame, syncUi]);
+
+  const placeStructure = useCallback((type) => {
+    const s = stateRef.current;
+    const definition = STRUCTURES[type];
+    if (!s.started || s.over || !definition) return;
+    const architect = s.skillTree?.architect || 0;
+    const cost = Math.max(8, Math.round(definition.cost * (1 - architect * .08)));
+    const structureCap = 12 + architect * 3;
+    if (s.souls < cost || s.structures.length >= structureCap) return;
+    const position = { x: mouseRef.current.x, y: mouseRef.current.y };
+    keepInArena(position, 825);
+    if (dist(position, s.player) < 65 || s.structures.some(structure => dist(position, structure) < 75)) {
+      setSaveNotice("배치 공간이 부족합니다");
+      window.setTimeout(() => setSaveNotice(""), 1300);
+      return;
+    }
+    const maxHp = Math.round(definition.hp * (1 + architect * .25));
+    s.souls -= cost;
+    s.structures.push({
+      id: s.nextEntityId++, type, x: position.x, y: position.y,
+      hp: maxHp, maxHp, cooldown: 0, production: 3,
+      phase: Math.random() * Math.PI * 2, hurt: 0,
+    });
+    s.rings.push({ x: position.x, y: position.y, r: 8, life: .55, color: "#65eaff" });
+    addParticles(s, position.x, position.y, "#65eaff", 16, .7);
+    setBuildMode(null);
     syncUi();
     saveGame(true);
   }, [saveGame, syncUi]);
@@ -1420,6 +1632,7 @@ export default function DemonGame() {
       if (e.code === "Digit2") buySoulItem("heal");
       if (e.code === "Digit3") buySoulItem("magic");
       if (e.code === "Digit4") buySoulItem("minion");
+      if (e.code === "Escape") setBuildMode(null);
     };
     const up = (e) => keysRef.current.delete(e.code);
     window.addEventListener("keydown", down, { passive: false });
@@ -1456,14 +1669,9 @@ export default function DemonGame() {
       ctx.save();
       if (s.shake > 0 && settingsRef.current.screenShake) ctx.translate((Math.random() - .5) * s.shake, (Math.random() - .5) * s.shake);
       if (img.complete && img.naturalWidth) {
-        const sourceHeight = img.naturalWidth * H / W;
-        const sourceY = Math.min(
-          img.naturalHeight - sourceHeight,
-          img.naturalHeight * .07,
-        );
         ctx.drawImage(
           img,
-          0, sourceY, img.naturalWidth, sourceHeight,
+          0, 0, img.naturalWidth, img.naturalHeight,
           0, 0, W, H,
         );
       } else {
@@ -1502,6 +1710,15 @@ export default function DemonGame() {
         ctx.restore();
       }
       const animationTime = settingsRef.current.motion ? s.time : 0;
+      for (const structure of s.structures) drawStructure(ctx, structure, animationTime);
+      for (const beam of s.structureBeams) {
+        ctx.save();
+        ctx.globalAlpha = clamp(beam.life / beam.maxLife, 0, 1);
+        ctx.shadowColor = "#d768ff"; ctx.shadowBlur = 18;
+        ctx.strokeStyle = "#f0c8ff"; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(beam.x1, beam.y1); ctx.lineTo(beam.x2, beam.y2); ctx.stroke();
+        ctx.restore();
+      }
       for (const m of s.minions) drawMinion(ctx, m, minionSprites, animationTime);
       for (const e of s.enemies) drawEnemy(ctx, e, enemySprites, animationTime);
       if (s.started) drawPlayer(ctx, s.player, animationTime, playerSprite, { weapon: s.equippedWeapon, armor: s.equippedArmor });
@@ -1584,6 +1801,7 @@ export default function DemonGame() {
     armor: "피해 감소 1.5% · 장착 시 갑옷 외형/추가 2배",
     undead: "전투력당 HP +15 · 공격 +4 · 장착 시 추가 2배",
   }[inventoryTab];
+  const architectLevel = ui.skillTree.architect || 0;
 
   return (
     <main className="game-shell">
@@ -1625,6 +1843,10 @@ export default function DemonGame() {
           onMouseMove={canvasPoint}
           onMouseDown={(e) => {
             canvasPoint(e);
+            if (buildMode) {
+              placeStructure(buildMode);
+              return;
+            }
             if (e.button === 2) useSkill("sword");
             else mouseRef.current.down = true;
           }}
@@ -1632,6 +1854,7 @@ export default function DemonGame() {
           onMouseLeave={() => { mouseRef.current.down = false; }}
           onContextMenu={(e) => e.preventDefault()}
           aria-label="마왕의 최종 방어선 게임 화면"
+          className={buildMode ? "building" : ""}
         />
 
         <div className="hud top-left">
@@ -1683,6 +1906,26 @@ export default function DemonGame() {
               <kbd>4</kbd><span>망자 강화 <small>LV.{ui.minionLevel} · 체력/공격/외형</small></span><b>{20 + ui.minionLevel * 15}</b>
             </button>
           </div>
+        )}
+
+        {ui.started && !ui.over && (
+          <aside className="build-panel">
+            <div className="build-head"><span>지옥 건축</span><b>{ui.structures.length}/{12 + architectLevel * 3}</b></div>
+            {Object.entries(STRUCTURES).map(([type, definition]) => {
+              const cost = Math.max(8, Math.round(definition.cost * (1 - architectLevel * .08)));
+              return (
+                <button
+                  key={type}
+                  className={buildMode === type ? "active" : ""}
+                  disabled={ui.souls < cost || ui.structures.length >= 12 + architectLevel * 3}
+                  onClick={() => setBuildMode(current => current === type ? null : type)}
+                >
+                  <i>{definition.icon}</i><span>{definition.label}</span><b>◈ {cost}</b>
+                </button>
+              );
+            })}
+            <small>{buildMode ? "맵을 클릭해 배치 · ESC 취소" : "영혼으로 방어 시설 건설"}</small>
+          </aside>
         )}
 
         {ui.started && !ui.over && inventoryOpen && (
@@ -1753,6 +1996,7 @@ export default function DemonGame() {
             <section>
               <h3>망자 부대 <small>{ui.minions.length}명 생존</small></h3>
               <p>시간 제한 없이 유지 · 서로 겹치지 않음 · 영웅 처치마다 공격 +2, 최대 HP +4</p>
+              <p>소환 상한 {ui.minionCap}명 · 소환 시 개별 0.001% 확률로 엘리트 망자 등장</p>
               <div className="minion-index-list">
                 {ui.minions.length === 0 && <small>소환된 망자가 없습니다.</small>}
                 {ui.minions.slice(0, 8).map((minion, index) => (
@@ -1866,12 +2110,12 @@ export default function DemonGame() {
                   key={x.id}
                   className="skill"
                   onClick={() => useSkill(x.id)}
-                  disabled={x.id === "summon" && ui.souls < ui.summonCost}
+                  disabled={x.id === "summon" && (ui.souls < ui.summonCost || ui.minions.length >= ui.minionCap)}
                   style={{ "--skill": x.color }}
                 >
                   <kbd>{x.key}</kbd>
                   <span className="skill-icon">{x.icon}</span>
-                  <span className="skill-copy"><b>{x.name}</b><small>{x.id === "summon" ? `영혼 ${ui.summonCost} · 영구 유지` : x.sub}</small></span>
+                  <span className="skill-copy"><b>{x.name}</b><small>{x.id === "summon" ? `영혼 ${ui.summonCost} · ${ui.minions.length}/${ui.minionCap}` : x.sub}</small></span>
                   {cd > 0 && <i className="cooldown">{cd.toFixed(1)}</i>}
                 </button>
               );

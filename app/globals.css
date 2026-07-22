@@ -71,6 +71,7 @@ button { font: inherit; }
   box-shadow: inset 0 0 100px rgba(0,0,0,.75), inset 0 0 0 5px rgba(0,0,0,.45);
 }
 canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: none; }
+canvas.building { cursor: cell; box-shadow: inset 0 0 45px rgba(91,233,229,.18); }
 
 .hud { position: absolute; z-index: 3; pointer-events: none; }
 .top-left { left: 2.2%; top: 3.6%; display: flex; align-items: center; gap: 14px; }
@@ -140,6 +141,23 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: 
 .soul-shop button span { display: grid; font-size: 10px; font-weight: 700; }
 .soul-shop button small { color: #6e9297; font-size: 7px; margin-top: 1px; }
 .soul-shop button > b { color: #69dbea; font-size: 10px; }
+
+.build-panel {
+  position: absolute; z-index: 4; left: 2.2%; top: 57%; width: 174px; padding: 6px;
+  background: rgba(5,12,15,.92); border: 1px solid rgba(101,234,224,.42);
+  box-shadow: 0 8px 28px #000; backdrop-filter: blur(8px);
+}
+.build-head { display: flex; justify-content: space-between; padding: 2px 4px 6px; color: #7de8e2; font-size: 9px; }
+.build-panel > button {
+  width: 100%; display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 5px;
+  padding: 6px; color: #c6d7d8; background: #101719; border: 0; border-top: 1px solid #273a3d;
+  cursor: pointer; text-align: left; font-size: 9px;
+}
+.build-panel > button i { color: #70e6e1; font-style: normal; text-align: center; }
+.build-panel > button b { color: #68dae4; font-size: 8px; }
+.build-panel > button.active { color: #fff; background: #194047; box-shadow: inset 2px 0 #70e6e1; }
+.build-panel > button:disabled { opacity: .4; cursor: not-allowed; }
+.build-panel > small { display: block; padding: 5px 3px 1px; color: #617f82; font-size: 7px; text-align: center; }
 
 .inventory-panel {
   position: absolute; z-index: 4; right: 2.2%; top: 18%; width: 244px;
@@ -376,6 +394,10 @@ footer b { color: #403930; margin: 0 7px; }
   .shop-title span { display: none; }
   .soul-shop button { grid-template-columns: 18px auto; padding: 3px 4px; }
   .soul-shop button span, .soul-shop button > b { display: none; }
+  .build-panel { left: 1.5%; top: 57%; width: auto; padding: 3px; }
+  .build-head span, .build-panel > small { display: none; }
+  .build-panel > button { grid-template-columns: 18px; padding: 4px; }
+  .build-panel > button span, .build-panel > button b { display: none; }
   .inventory-panel { right: 1.5%; top: 20%; width: min(210px, 47%); }
   .index-panel { right: 1.5%; top: 20%; width: min(250px, 58%); max-height: 72%; }
   .settings-panel { right: 1.5%; top: 13%; width: min(220px, 58%); }
