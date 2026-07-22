@@ -1794,7 +1794,9 @@ export default function DemonGame() {
     mouseRef.current.y = (e.clientY - rect.top) / rect.height * H;
   };
 
-  const inventoryItems = ui.inventory.filter(item => item.category === inventoryTab);
+  const inventoryItems = ui.inventory
+    .filter(item => item.category === inventoryTab)
+    .sort((a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity));
   const inventoryPowerTotal = inventoryPower(ui.inventory, inventoryTab);
   const inventoryEffect = {
     weapon: "전투력당 기본 공격 +2 · 장착 시 검 외형/추가 2배",
