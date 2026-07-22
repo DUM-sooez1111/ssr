@@ -9,6 +9,7 @@ const LANES = [515, 650, 800, 950, 1085];
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const SAVE_KEY = "demon-king-final-stand-save-v1";
 const PROGRESS_KEY = "demon-king-final-stand-progress-v1";
+const SETTINGS_KEY = "demon-king-final-stand-settings-v1";
 const DRAW_COST = 10;
 
 const LOOT_TABLE = {
@@ -52,6 +53,36 @@ const RARITY = {
 };
 const RARITY_ORDER = Object.keys(RARITY);
 
+const SKILL_BRANCHES = [
+  {
+    id: "attack", label: "공격", icon: "⚔", color: "#e6573f",
+    nodes: [
+      { id: "rage", name: "마왕의 격노", icon: "🔥", max: 5, description: "기본 공격 피해 +8%" },
+      { id: "blade", name: "파멸의 검", icon: "🗡", max: 3, requires: ["rage", 2], description: "마왕검 피해 +12" },
+      { id: "inferno", name: "지옥의 핵", icon: "☄", max: 3, requires: ["blade", 2], description: "지옥불 피해 +20" },
+    ],
+  },
+  {
+    id: "defense", label: "방어", icon: "◆", color: "#4a9fdd",
+    nodes: [
+      { id: "vitality", name: "불멸의 육체", icon: "✚", max: 5, description: "최대 체력 +10" },
+      { id: "guard", name: "어둠의 방벽", icon: "⬟", max: 3, requires: ["vitality", 2], description: "받는 피해 4% 감소" },
+      { id: "fortress", name: "왕좌의 수호자", icon: "♜", max: 1, requires: ["guard", 3], description: "최대 체력 +50" },
+    ],
+  },
+  {
+    id: "support", label: "보조", icon: "♣", color: "#72b957",
+    nodes: [
+      { id: "harvest", name: "영혼 수확", icon: "◈", max: 5, description: "영혼 획득량 +10%" },
+      { id: "commander", name: "망자의 지휘관", icon: "♟", max: 3, requires: ["harvest", 2], description: "망자 공격·체력 증가" },
+      { id: "fortune", name: "마왕의 행운", icon: "✦", max: 3, requires: ["commander", 1], description: "고등급 뽑기 확률 증가" },
+    ],
+  },
+];
+
+const makeSkillTree = () => Object.fromEntries(SKILL_BRANCHES.flatMap(branch => branch.nodes.map(node => [node.id, 0])));
+const xpNeeded = level => 80 + (level - 1) * 45;
+
 const SKILLS = [
   { id: "sword", key: "R / 우클릭", name: "마왕검 휘두르기", sub: "전방 · 0.8초", color: "#73d7ff", icon: "⚔" },
   { id: "slash", key: "SPACE", name: "파멸의 낫", sub: "근접 · 2초", color: "#f3d18a", icon: "☾" },
@@ -83,6 +114,11 @@ function readProgress() {
       swordLevel: Math.max(0, Math.floor(Number(saved.swordLevel) || 0)),
       magicLevel: Math.max(0, Math.floor(Number(saved.magicLevel) || 0)),
       minionLevel: Math.max(0, Math.floor(Number(saved.minionLevel) || 0)),
+      healLevel: Math.max(0, Math.floor(Number(saved.healLevel) || 0)),
+      playerLevel: Math.max(1, Math.floor(Number(saved.playerLevel) || 1)),
+      xp: Math.max(0, Math.floor(Number(saved.xp) || 0)),
+      skillPoints: Math.max(0, Math.floor(Number(saved.skillPoints) || 0)),
+      skillTree: Object.fromEntries(Object.keys(makeSkillTree()).map(key => [key, Math.max(0, Math.floor(Number(saved.skillTree?.[key]) || 0))])),
       maxHp: Math.max(100, Math.floor(Number(saved.maxHp) || 100)),
       equippedUndead: RARITY[saved.equippedUndead] ? saved.equippedUndead : null,
       inventory: Array.isArray(saved.inventory)
@@ -110,12 +146,30 @@ function saveProgress(s) {
       swordLevel: s.swordLevel,
       magicLevel: s.magicLevel,
       minionLevel: s.minionLevel,
+      healLevel: s.healLevel,
+      playerLevel: s.playerLevel,
+      xp: s.xp,
+      skillPoints: s.skillPoints,
+      skillTree: s.skillTree,
       maxHp: s.player.maxHp,
       equippedUndead: RARITY[s.equippedUndead] ? s.equippedUndead : null,
       inventory: Array.isArray(s.inventory) ? s.inventory : [],
     }));
   } catch {
     // The active run can continue even when browser storage is unavailable.
+  }
+}
+
+function readSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
+    return {
+      motion: saved?.motion !== false,
+      screenShake: saved?.screenShake !== false,
+      autoOpenInventory: saved?.autoOpenInventory !== false,
+    };
+  } catch {
+    return { motion: true, screenShake: true, autoOpenInventory: true };
   }
 }
 
@@ -149,6 +203,11 @@ function makeState() {
     summonCount: 0,
     swordLevel: 0,
     minionLevel: 0,
+    healLevel: 0,
+    playerLevel: 1,
+    xp: 0,
+    skillPoints: 0,
+    skillTree: makeSkillTree(),
     shake: 0,
     flash: 0,
     player: { x: 800, y: 265, hp: 100, maxHp: 100, angle: Math.PI / 2, hurt: 0, moving: false },
@@ -162,6 +221,7 @@ function makeState() {
     rings: [],
     swings: [],
     soulOrbs: [],
+    xpOrbs: [],
   };
 }
 
@@ -444,7 +504,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
   const weaponPower = inventoryPower(s.inventory, "weapon");
   const armorPower = inventoryPower(s.inventory, "armor");
   const undeadPower = inventoryPower(s.inventory, "undead") + equippedUndeadPower(s) * 2;
-  const playerDamageMultiplier = 1 - Math.min(.4, armorPower * .015);
+  const skillTree = { ...makeSkillTree(), ...(s.skillTree || {}) };
+  const playerDamageMultiplier = 1 - Math.min(.65, armorPower * .015 + skillTree.guard * .04);
 
   if (s.waveTimer > 24) {
     const completedWave = s.wave;
@@ -495,7 +556,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       vx: Math.cos(a) * 620,
       vy: Math.sin(a) * 620,
       life: 1.35,
-      damage: 24 + s.magicLevel * 6 + s.swordLevel * 5 + weaponPower * 2,
+      damage: (24 + s.magicLevel * 6 + s.swordLevel * 5 + weaponPower * 2) * (1 + skillTree.rage * .08),
     });
     addParticles(s, s.player.x, s.player.y, "#d574ff", 5, .4);
   };
@@ -601,7 +662,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
       m.attack -= dt;
       if (targetDistance < 35 + m.level * 2 && m.attack <= 0) {
         const knightAdvantage = target.type === "knight";
-        const damage = (knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10) + undeadPower * 4 + (m.kills || 0) * 2;
+        const damage = (knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10)
+          + undeadPower * 4 + (m.kills || 0) * 2 + skillTree.commander * 10;
         const wasAlive = target.hp > 0;
         hurtEnemy(target, damage, knightAdvantage ? "#f5d56a" : "#90e2b1");
         if (wasAlive && target.hp <= 0 && !target.minionKillClaimed) {
@@ -739,11 +801,22 @@ function updateGame(s, dt, keys, mouse, canvas) {
         knight: { score: 100, souls: 1 },
       }[e.type];
       s.score += rewards.score;
-      const soulValue = e.type === "boss"
+      const baseSoulValue = e.type === "boss"
         ? rewards.souls + (e.tier || 0) * 10
         : rewards.souls * (1 + (e.tier || 0));
+      const soulValue = Math.max(1, Math.round(baseSoulValue * (1 + skillTree.harvest * .1)));
+      const xpValue = Math.round(({
+        boss: 180, paladin: 42, assassin: 28, archer: 22, tank: 32, mage: 20, knight: 14,
+      }[e.type] + s.wave * 1.5) * (1 + (e.tier || 0) * .35));
       s.soulOrbs.push({
         x: e.x, y: e.y, value: soulValue, life: 14,
+        phase: Math.random() * Math.PI * 2,
+      });
+      s.xpOrbs.push({
+        x: e.x + (Math.random() - .5) * 20,
+        y: e.y + (Math.random() - .5) * 20,
+        value: xpValue,
+        life: 16,
         phase: Math.random() * Math.PI * 2,
       });
       addParticles(s, e.x, e.y, "#ff8a38", 18, 1);
@@ -772,6 +845,32 @@ function updateGame(s, dt, keys, mouse, canvas) {
     }
   }
   s.soulOrbs = s.soulOrbs.filter(x => x.life > 0 && !x.collected);
+  for (const orb of s.xpOrbs) {
+    orb.life -= dt;
+    orb.phase += dt * 4;
+    const d = dist(orb, s.player);
+    if (d < 210 || orb.life < 11) {
+      const a = Math.atan2(s.player.y - orb.y, s.player.x - orb.x);
+      const speed = 100 + (210 - Math.min(210, d)) * 1.6;
+      orb.x += Math.cos(a) * speed * dt;
+      orb.y += Math.sin(a) * speed * dt;
+    }
+    if (d < 30 && !orb.collected) {
+      orb.collected = true;
+      s.xp += orb.value;
+      addParticles(s, s.player.x, s.player.y, "#7d8dff", 9, .6);
+      while (s.xp >= xpNeeded(s.playerLevel)) {
+        s.xp -= xpNeeded(s.playerLevel);
+        s.playerLevel++;
+        s.skillPoints++;
+        s.player.maxHp += 5;
+        s.player.hp = Math.min(s.player.maxHp, s.player.hp + 25);
+        s.rings.push({ x: s.player.x, y: s.player.y, r: 8, life: .8, color: "#8e9dff" });
+        addParticles(s, s.player.x, s.player.y, "#d4d8ff", 22, .9);
+      }
+    }
+  }
+  s.xpOrbs = s.xpOrbs.filter(x => x.life > 0 && !x.collected);
   for (const p of s.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96; p.life -= dt; }
   s.particles = s.particles.filter(p => p.life > 0);
   for (const r of s.rings) { r.r += 420 * dt; r.life -= dt; }
@@ -785,7 +884,7 @@ export default function DemonGame() {
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
   const mouseRef = useRef({ x: 800, y: 450, down: false });
-  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, inventory: [], equippedUndead: null, minions: [], summonCost: 8, cooldowns: {}, boss: null });
+  const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, healLevel: 0, playerLevel: 1, xp: 0, xpNeeded: 80, skillPoints: 0, skillTree: makeSkillTree(), inventory: [], equippedUndead: null, minions: [], summonCost: 8, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
   const [hasSave, setHasSave] = useState(false);
   const [saveNotice, setSaveNotice] = useState("");
@@ -794,6 +893,10 @@ export default function DemonGame() {
   const [drawNotice, setDrawNotice] = useState("");
   const [indexOpen, setIndexOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [skillTreeOpen, setSkillTreeOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState({ motion: true, screenShake: true, autoOpenInventory: true });
+  const settingsRef = useRef(settings);
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
@@ -801,7 +904,9 @@ export default function DemonGame() {
     setUi({
       started: s.started, over: s.over, win: s.win, wave: s.wave, rest: s.restTimer,
       hp: Math.max(0, s.player.hp), maxHp: s.player.maxHp,
-      kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, minionLevel: s.minionLevel,
+      kills: s.kills, score: s.score, souls: s.souls, swordLevel: s.swordLevel, magicLevel: s.magicLevel, minionLevel: s.minionLevel, healLevel: s.healLevel || 0,
+      playerLevel: s.playerLevel || 1, xp: s.xp || 0, xpNeeded: xpNeeded(s.playerLevel || 1),
+      skillPoints: s.skillPoints || 0, skillTree: { ...makeSkillTree(), ...(s.skillTree || {}) },
       inventory: Array.isArray(s.inventory) ? s.inventory.map(item => ({ ...item })) : [],
       equippedUndead: s.equippedUndead,
       minions: s.minions.filter(m => !m.dead).map(m => ({ id: m.id, hp: m.hp, maxHp: m.maxHp, kills: m.kills || 0, level: m.level || 0 })),
@@ -872,6 +977,7 @@ export default function DemonGame() {
         enemies: Array.isArray(loaded.enemies) ? loaded.enemies : [],
         minions,
         soulOrbs: Array.isArray(loaded.soulOrbs) ? loaded.soulOrbs : [],
+        xpOrbs: Array.isArray(loaded.xpOrbs) ? loaded.xpOrbs : [],
       };
       syncUi();
       canvasRef.current?.focus();
@@ -887,6 +993,7 @@ export default function DemonGame() {
     if (!s.started || s.over) return;
     if (skill === "sword" && s.cooldowns.sword <= 0) {
       s.cooldowns.sword = .75;
+      const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
       const weaponPower = inventoryPower(s.inventory, "weapon");
       const angle = Math.atan2(mouseRef.current.y - s.player.y, mouseRef.current.x - s.player.x);
       s.player.angle = angle;
@@ -894,7 +1001,7 @@ export default function DemonGame() {
       for (const e of s.enemies) {
         const targetAngle = Math.atan2(e.y - s.player.y, e.x - s.player.x);
         if (dist(s.player, e) < 165 + e.r && Math.abs(angleDelta(targetAngle, angle)) < .95) {
-          e.hp -= 52 + s.swordLevel * 14 + weaponPower * 4;
+          e.hp -= 52 + s.swordLevel * 14 + weaponPower * 4 + tree.blade * 12;
           e.x += Math.cos(angle) * 32;
           e.y += Math.sin(angle) * 32;
           addParticles(s, e.x, e.y, "#8ee6ff", 11, .8);
@@ -917,13 +1024,14 @@ export default function DemonGame() {
       s.shake = 5;
     }
     if (skill === "fire" && s.cooldowns.fire <= 0) {
+      const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
       const fireCooldown = Math.max(4, 7 - s.magicLevel * .25);
       const fireRadius = 170 + s.magicLevel * 6;
       s.cooldowns.fire = fireCooldown;
       s.rings.push({ x: mouseRef.current.x, y: mouseRef.current.y, r: 15, life: .65, color: "#ff4f25" });
       for (const e of s.enemies) {
         if (dist(mouseRef.current, e) < fireRadius) {
-          e.hp -= 95 + s.magicLevel * 18;
+          e.hp -= 95 + s.magicLevel * 18 + tree.inferno * 20;
           addParticles(s, e.x, e.y, "#ff4a22", 15, 1);
         }
       }
@@ -935,7 +1043,8 @@ export default function DemonGame() {
       s.souls -= summonCost;
       s.summonCount = (s.summonCount || 0) + 1;
       const undeadPower = inventoryPower(s.inventory, "undead") + equippedUndeadPower(s) * 2;
-      const maxHp = 80 + s.minionLevel * 30 + undeadPower * 15;
+      const commanderLevel = s.skillTree?.commander || 0;
+      const maxHp = 80 + s.minionLevel * 30 + undeadPower * 15 + commanderLevel * 25;
       for (let i = 0; i < 3; i++) {
         const a = i / 3 * Math.PI * 2;
         s.minions.push({
@@ -969,10 +1078,16 @@ export default function DemonGame() {
       s.rings.push({ x: s.player.x, y: s.player.y, r: 10, life: .7, color: "#72ddff" });
       addParticles(s, s.player.x, s.player.y, "#72ddff", 18, .8);
     }
-    if (item === "heal" && s.souls >= 12) {
-      s.souls -= 12;
-      s.player.maxHp += 10;
-      s.player.hp = Math.min(s.player.maxHp, s.player.hp + 35);
+    if (item === "heal") {
+      const level = s.healLevel || 0;
+      const cost = 12 + level * 8;
+      if (s.souls < cost) return;
+      const healAmount = 35 + level * 10;
+      const maxHpGain = 10 + level * 2;
+      s.souls -= cost;
+      s.player.maxHp += maxHpGain;
+      s.player.hp = Math.min(s.player.maxHp, s.player.hp + healAmount);
+      s.healLevel = level + 1;
       purchased = true;
       addParticles(s, s.player.x, s.player.y, "#65f0a0", 16, .7);
     }
@@ -1019,7 +1134,8 @@ export default function DemonGame() {
       window.setTimeout(() => setDrawNotice(""), 1600);
       return;
     }
-    const roll = Math.random() * 100;
+    const luckBonus = (s.skillTree?.fortune || 0) * 1.5;
+    const roll = Math.min(99.999, Math.random() * 100 + luckBonus);
     let cumulativeChance = 0;
     const rarity = RARITY_ORDER.find(key => {
       cumulativeChance += RARITY[key].chance;
@@ -1068,6 +1184,55 @@ export default function DemonGame() {
     saveGame(true);
   }, [saveGame, syncUi]);
 
+  const buySkillNode = useCallback((nodeId) => {
+    const s = stateRef.current;
+    if (!s.started || s.over || s.skillPoints <= 0) return;
+    const node = SKILL_BRANCHES.flatMap(branch => branch.nodes).find(item => item.id === nodeId);
+    if (!node) return;
+    const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
+    if (tree[nodeId] >= node.max) return;
+    if (node.requires && tree[node.requires[0]] < node.requires[1]) return;
+    tree[nodeId]++;
+    s.skillTree = tree;
+    s.skillPoints--;
+    if (nodeId === "vitality") {
+      s.player.maxHp += 10;
+      s.player.hp += 10;
+    }
+    if (nodeId === "fortress") {
+      s.player.maxHp += 50;
+      s.player.hp += 50;
+    }
+    if (nodeId === "commander") {
+      for (const minion of s.minions) {
+        minion.maxHp += 25;
+        minion.hp += 25;
+      }
+    }
+    syncUi();
+    saveGame(true);
+  }, [saveGame, syncUi]);
+
+  const resetSkillTree = useCallback(() => {
+    const s = stateRef.current;
+    if (!s.started || s.over) return;
+    const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
+    const spent = Object.values(tree).reduce((total, level) => total + level, 0);
+    if (spent <= 0) return;
+    const hpReduction = tree.vitality * 10 + tree.fortress * 50;
+    const minionHpReduction = tree.commander * 25;
+    s.player.maxHp = Math.max(100, s.player.maxHp - hpReduction);
+    s.player.hp = Math.min(s.player.hp, s.player.maxHp);
+    for (const minion of s.minions) {
+      minion.maxHp = Math.max(1, minion.maxHp - minionHpReduction);
+      minion.hp = Math.min(minion.hp, minion.maxHp);
+    }
+    s.skillPoints += spent;
+    s.skillTree = makeSkillTree();
+    syncUi();
+    saveGame(true);
+  }, [saveGame, syncUi]);
+
   const start = useCallback(() => {
     localStorage.removeItem(SAVE_KEY);
     setHasSave(false);
@@ -1078,6 +1243,11 @@ export default function DemonGame() {
       fresh.swordLevel = progress.swordLevel;
       fresh.magicLevel = progress.magicLevel;
       fresh.minionLevel = progress.minionLevel;
+      fresh.healLevel = progress.healLevel;
+      fresh.playerLevel = progress.playerLevel;
+      fresh.xp = progress.xp;
+      fresh.skillPoints = progress.skillPoints;
+      fresh.skillTree = progress.skillTree;
       fresh.inventory = progress.inventory;
       fresh.equippedUndead = progress.equippedUndead;
       fresh.player.maxHp = progress.maxHp;
@@ -1091,6 +1261,9 @@ export default function DemonGame() {
 
   useEffect(() => {
     setHasSave(Boolean(localStorage.getItem(SAVE_KEY)));
+    const savedSettings = readSettings();
+    settingsRef.current = savedSettings;
+    setSettings(savedSettings);
     const interval = window.setInterval(() => saveGame(true), 3000);
     const beforeUnload = () => saveGame(true);
     window.addEventListener("beforeunload", beforeUnload);
@@ -1108,11 +1281,22 @@ export default function DemonGame() {
   }, [ui.over]);
 
   useEffect(() => {
-    if (ui.rest > 0) {
+    if (ui.rest > 0 && settings.autoOpenInventory) {
       setInventoryOpen(true);
       setIndexOpen(false);
+      setSkillTreeOpen(false);
+      setSettingsOpen(false);
     }
-  }, [ui.rest > 0]);
+  }, [ui.rest > 0, settings.autoOpenInventory]);
+
+  const updateSetting = useCallback((key) => {
+    setSettings(current => {
+      const next = { ...current, [key]: !current[key] };
+      settingsRef.current = next;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* Continue without persistence. */ }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const onFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -1176,7 +1360,7 @@ export default function DemonGame() {
       if (uiClock > .08) { uiClock = 0; syncUi(); }
 
       ctx.save();
-      if (s.shake > 0) ctx.translate((Math.random() - .5) * s.shake, (Math.random() - .5) * s.shake);
+      if (s.shake > 0 && settingsRef.current.screenShake) ctx.translate((Math.random() - .5) * s.shake, (Math.random() - .5) * s.shake);
       if (img.complete && img.naturalWidth) {
         const sourceHeight = img.naturalWidth * H / W;
         const sourceY = Math.min(
@@ -1223,9 +1407,10 @@ export default function DemonGame() {
         ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(5, -5); ctx.lineTo(5, 5); ctx.closePath(); ctx.fill();
         ctx.restore();
       }
-      for (const m of s.minions) drawMinion(ctx, m, minionSprites, s.time);
-      for (const e of s.enemies) drawEnemy(ctx, e, enemySprites, s.time);
-      if (s.started) drawPlayer(ctx, s.player, s.time, playerSprite);
+      const animationTime = settingsRef.current.motion ? s.time : 0;
+      for (const m of s.minions) drawMinion(ctx, m, minionSprites, animationTime);
+      for (const e of s.enemies) drawEnemy(ctx, e, enemySprites, animationTime);
+      if (s.started) drawPlayer(ctx, s.player, animationTime, playerSprite);
       for (const swing of s.swings) {
         const alpha = clamp(swing.life / swing.maxLife, 0, 1);
         ctx.save();
@@ -1259,6 +1444,20 @@ export default function DemonGame() {
         ctx.beginPath();
         ctx.moveTo(0, -16); ctx.lineTo(7, 0); ctx.lineTo(0, 13); ctx.lineTo(-7, 0); ctx.closePath();
         ctx.fill();
+        ctx.restore();
+      }
+      for (const orb of s.xpOrbs) {
+        const pulse = 1 + Math.sin(orb.phase) * .16;
+        ctx.save();
+        ctx.translate(orb.x, orb.y);
+        ctx.scale(pulse, pulse);
+        ctx.shadowColor = "#7285ff";
+        ctx.shadowBlur = 20;
+        drawDiamond(ctx, 0, 0, 9, "#dce0ff", "#6576ed");
+        ctx.fillStyle = "#687aff";
+        ctx.font = "900 7px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("XP", 0, 2.5);
         ctx.restore();
       }
       for (const p of s.particles) {
@@ -1305,15 +1504,21 @@ export default function DemonGame() {
         </div>
         <div className="top-actions">
           {ui.started && !ui.over && (
-            <button className="inventory-button" onClick={() => { setInventoryOpen(open => !open); setIndexOpen(false); }}>
+            <button className="inventory-button" onClick={() => { setInventoryOpen(open => !open); setIndexOpen(false); setSkillTreeOpen(false); setSettingsOpen(false); }}>
               {inventoryOpen ? "인벤토리 닫기" : "인벤토리"}
             </button>
           )}
           {ui.started && !ui.over && (
-            <button className="index-button" onClick={() => { setIndexOpen(open => !open); setInventoryOpen(false); }}>
+            <button className="index-button" onClick={() => { setIndexOpen(open => !open); setInventoryOpen(false); setSkillTreeOpen(false); setSettingsOpen(false); }}>
               {indexOpen ? "인덱스 닫기" : "인덱스"}
             </button>
           )}
+          {ui.started && !ui.over && (
+            <button className="tree-button" onClick={() => { setSkillTreeOpen(open => !open); setInventoryOpen(false); setIndexOpen(false); setSettingsOpen(false); }}>
+              스킬 트리 {ui.skillPoints > 0 ? `+${ui.skillPoints}` : ""}
+            </button>
+          )}
+          <button className="settings-button" onClick={() => { setSettingsOpen(open => !open); setInventoryOpen(false); setIndexOpen(false); setSkillTreeOpen(false); }}>설정</button>
           <button className="fullscreen-button" onClick={toggleFullscreen}>{fullscreen ? "화면 복귀" : "전체화면"}</button>
           {ui.started && !ui.over && <button className="save-button" onClick={() => saveGame(false)}>{saveNotice || "진행 저장"}</button>}
           <button className="sound" onClick={() => setMuted(v => !v)} aria-label="소리 전환">{muted ? "소리 꺼짐" : "소리 켜짐"}</button>
@@ -1338,8 +1543,10 @@ export default function DemonGame() {
         <div className="hud top-left">
           <div className="portrait">♛</div>
           <div className="bars">
-            <div className="bar-row"><span>마왕</span><b>{Math.ceil(ui.hp)} / {ui.maxHp}</b></div>
+            <div className="bar-row"><span>마왕 LV.{ui.playerLevel}</span><b>{Math.ceil(ui.hp)} / {ui.maxHp}</b></div>
             <div className="bar"><i className="hp" style={{ width: `${ui.hp / ui.maxHp * 100}%` }} /></div>
+            <div className="xp-row"><span>EXP</span><b>{ui.xp} / {ui.xpNeeded}</b></div>
+            <div className="xp-bar"><i style={{ width: `${ui.xp / ui.xpNeeded * 100}%` }} /></div>
           </div>
         </div>
 
@@ -1372,8 +1579,8 @@ export default function DemonGame() {
             <button onClick={() => buySoulItem("sword")} disabled={ui.souls < 15 + ui.swordLevel * 10}>
               <kbd>1</kbd><span>마왕검 강화 <small>LV.{ui.swordLevel} · 기본 공격 +5</small></span><b>{15 + ui.swordLevel * 10}</b>
             </button>
-            <button onClick={() => buySoulItem("heal")} disabled={ui.souls < 12}>
-              <kbd>2</kbd><span>마왕 회복 <small>HP+35 · MAX+10</small></span><b>12</b>
+            <button onClick={() => buySoulItem("heal")} disabled={ui.souls < 12 + ui.healLevel * 8}>
+              <kbd>2</kbd><span>마왕 회복 <small>HP+{35 + ui.healLevel * 10} · MAX+{10 + ui.healLevel * 2}</small></span><b>{12 + ui.healLevel * 8}</b>
             </button>
             <button onClick={() => buySoulItem("magic")} disabled={ui.souls < 18 + ui.magicLevel * 12}>
               <kbd>3</kbd><span>마력 강화 <small>LV.{ui.magicLevel} · 스킬 피해/범위/쿨</small></span><b>{18 + ui.magicLevel * 12}</b>
@@ -1472,6 +1679,56 @@ export default function DemonGame() {
               </div>
             </section>
           </aside>
+        )}
+
+        {settingsOpen && (
+          <aside className="settings-panel">
+            <div className="settings-head"><span>GAME OPTIONS</span><b>설정</b></div>
+            <button onClick={() => updateSetting("motion")}><span>걷기 모션</span><b>{settings.motion ? "켜짐" : "꺼짐"}</b></button>
+            <button onClick={() => updateSetting("screenShake")}><span>화면 흔들림</span><b>{settings.screenShake ? "켜짐" : "꺼짐"}</b></button>
+            <button onClick={() => updateSetting("autoOpenInventory")}><span>휴식 인벤토리 자동 열기</span><b>{settings.autoOpenInventory ? "켜짐" : "꺼짐"}</b></button>
+            <button onClick={() => setMuted(value => !value)}><span>효과음</span><b>{muted ? "꺼짐" : "켜짐"}</b></button>
+          </aside>
+        )}
+
+        {ui.started && !ui.over && skillTreeOpen && (
+          <section className="skill-tree-panel">
+            <div className="skill-tree-head">
+              <div><span>DEMONIC ASCENSION</span><h2>스킬 트리</h2></div>
+              <strong>스킬 포인트 ◈ {ui.skillPoints}</strong>
+              <button onClick={resetSkillTree}>초기화 ↻</button>
+              <button onClick={() => setSkillTreeOpen(false)}>닫기 ×</button>
+            </div>
+            <div className="skill-branches">
+              {SKILL_BRANCHES.map(branch => (
+                <div className={`skill-branch ${branch.id}`} key={branch.id} style={{ "--branch": branch.color }}>
+                  <h3><i>{branch.icon}</i>{branch.label}</h3>
+                  <div className="skill-nodes">
+                    {branch.nodes.map((node, index) => {
+                      const level = ui.skillTree[node.id] || 0;
+                      const locked = node.requires && (ui.skillTree[node.requires[0]] || 0) < node.requires[1];
+                      return (
+                        <button
+                          key={node.id}
+                          className={`${level > 0 ? "learned" : ""} ${locked ? "locked" : ""}`}
+                          onClick={() => buySkillNode(node.id)}
+                          disabled={locked || level >= node.max || ui.skillPoints <= 0}
+                        >
+                          {index > 0 && <i className="skill-connector" />}
+                          <span className="node-icon">{locked ? "🔒" : node.icon}</span>
+                          <b>{node.name}</b>
+                          <small>{node.description}</small>
+                          <strong>{level}/{node.max}</strong>
+                          {locked && <em>{node.requires[0]} {node.requires[1]} 필요</em>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="skill-tree-foot">영웅이 떨어뜨린 경험치를 모아 레벨업하면 스킬 포인트 1을 얻습니다.</div>
+          </section>
         )}
 
         {!ui.started && (
