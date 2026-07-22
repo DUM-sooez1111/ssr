@@ -1425,7 +1425,6 @@ export default function DemonGame() {
         minion.hp += power * 15;
       }
     }
-    setInventoryTab(category);
     setDrawNotice(`${RARITY[rarity].label} · ${itemName} 획득!`);
     window.setTimeout(() => setDrawNotice(""), 1800);
     syncUi();
