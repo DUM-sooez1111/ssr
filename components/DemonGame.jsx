@@ -9,6 +9,7 @@ const LANES = [515, 650, 800, 950, 1085];
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const SAVE_KEY = "demon-king-final-stand-save-v1";
 const PROGRESS_KEY = "demon-king-final-stand-progress-v1";
+const INVENTORY_KEY = "demon-king-final-stand-inventory-v1";
 const SETTINGS_KEY = "demon-king-final-stand-settings-v1";
 const DRAW_COST = 10;
 const MAX_ITEM_LEVEL = 20;
@@ -142,6 +143,51 @@ function keepInArena(entity, maxY = 855) {
   entity.x = clamp(entity.x, bounds.min, bounds.max);
 }
 
+function normalizeInventory(items) {
+  return Array.isArray(items)
+    ? items
+      .filter(item => LOOT_TABLE[item?.category] && RARITY[item?.rarity])
+      .map(item => ({
+        category: item.category,
+        rarity: item.rarity,
+        name: LOOT_TABLE[item.category].names[item.rarity],
+        count: Math.max(1, Math.floor(Number(item.count) || 1)),
+        level: clamp(Math.floor(Number(item.level) || 1), 1, MAX_ITEM_LEVEL),
+      }))
+    : [];
+}
+
+function readPersistentInventory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(INVENTORY_KEY) || "null");
+    if (saved?.version !== 1) return null;
+    const inventory = normalizeInventory(saved.inventory);
+    const owns = (category, rarity) => inventory.some(item => item.category === category && item.rarity === rarity);
+    return {
+      inventory,
+      equippedWeapon: owns("weapon", saved.equippedWeapon) ? saved.equippedWeapon : null,
+      equippedArmor: owns("armor", saved.equippedArmor) ? saved.equippedArmor : null,
+      equippedUndead: owns("undead", saved.equippedUndead) ? saved.equippedUndead : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersistentInventory(s) {
+  try {
+    localStorage.setItem(INVENTORY_KEY, JSON.stringify({
+      version: 1,
+      inventory: normalizeInventory(s.inventory),
+      equippedWeapon: RARITY[s.equippedWeapon] ? s.equippedWeapon : null,
+      equippedArmor: RARITY[s.equippedArmor] ? s.equippedArmor : null,
+      equippedUndead: RARITY[s.equippedUndead] ? s.equippedUndead : null,
+    }));
+  } catch {
+    // The active run can continue even when browser storage is unavailable.
+  }
+}
+
 function readProgress() {
   try {
     const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY) || "null");
@@ -160,17 +206,7 @@ function readProgress() {
       equippedWeapon: RARITY[saved.equippedWeapon] ? saved.equippedWeapon : null,
       equippedArmor: RARITY[saved.equippedArmor] ? saved.equippedArmor : null,
       equippedUndead: RARITY[saved.equippedUndead] ? saved.equippedUndead : null,
-      inventory: Array.isArray(saved.inventory)
-        ? saved.inventory
-          .filter(item => LOOT_TABLE[item?.category] && RARITY[item?.rarity])
-          .map(item => ({
-            category: item.category,
-            rarity: item.rarity,
-            name: LOOT_TABLE[item.category].names[item.rarity],
-            count: Math.max(1, Math.floor(Number(item.count) || 1)),
-            level: clamp(Math.floor(Number(item.level) || 1), 1, MAX_ITEM_LEVEL),
-          }))
-        : [],
+      inventory: normalizeInventory(saved.inventory),
     };
   } catch {
     localStorage.removeItem(PROGRESS_KEY);
@@ -179,6 +215,7 @@ function readProgress() {
 }
 
 function saveProgress(s) {
+  savePersistentInventory(s);
   try {
     localStorage.setItem(PROGRESS_KEY, JSON.stringify({
       version: 1,
@@ -1240,10 +1277,17 @@ export default function DemonGame() {
       if (!payload?.state || payload.version !== 1) throw new Error("invalid save");
       const base = makeState();
       const loaded = payload.state;
-      const inventory = Array.isArray(loaded.inventory) ? loaded.inventory : [];
-      const equippedWeapon = RARITY[loaded.equippedWeapon] ? loaded.equippedWeapon : null;
-      const equippedArmor = RARITY[loaded.equippedArmor] ? loaded.equippedArmor : null;
-      const equippedUndead = RARITY[loaded.equippedUndead] ? loaded.equippedUndead : null;
+      const persistentInventory = readPersistentInventory();
+      const inventory = persistentInventory?.inventory || normalizeInventory(loaded.inventory);
+      const equippedWeapon = persistentInventory
+        ? persistentInventory.equippedWeapon
+        : RARITY[loaded.equippedWeapon] ? loaded.equippedWeapon : null;
+      const equippedArmor = persistentInventory
+        ? persistentInventory.equippedArmor
+        : RARITY[loaded.equippedArmor] ? loaded.equippedArmor : null;
+      const equippedUndead = persistentInventory
+        ? persistentInventory.equippedUndead
+        : RARITY[loaded.equippedUndead] ? loaded.equippedUndead : null;
       const minionPower = inventoryPower(inventory, "undead") + (RARITY[equippedUndead]?.power || 0) * 2;
       const minionMaxHp = 80 + (loaded.minionLevel || 0) * 30 + minionPower * 15;
       let nextEntityId = Math.max(1, Number(loaded.nextEntityId) || 1);
@@ -1642,8 +1686,16 @@ export default function DemonGame() {
       fresh.player.maxHp = progress.maxHp;
       fresh.player.hp = progress.maxHp;
     }
+    const persistentInventory = readPersistentInventory();
+    if (persistentInventory) {
+      fresh.inventory = persistentInventory.inventory;
+      fresh.equippedWeapon = persistentInventory.equippedWeapon;
+      fresh.equippedArmor = persistentInventory.equippedArmor;
+      fresh.equippedUndead = persistentInventory.equippedUndead;
+    }
     fresh.started = true;
     stateRef.current = fresh;
+    savePersistentInventory(fresh);
     syncUi();
     canvasRef.current?.focus();
   }, [syncUi]);
