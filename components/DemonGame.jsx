@@ -61,8 +61,8 @@ const RARITY = {
 };
 const RARITY_ORDER = Object.keys(RARITY);
 const EQUIPMENT_ATLASES = {
-  armor: "armor-atlas-v1.png",
-  weapon: "weapon-atlas-v1.png",
+  armor: "player-armor-atlas-v2.png",
+  weapon: "weapon-atlas-v2.png",
   undead: "undead-races-atlas-v1.png",
 };
 
@@ -360,40 +360,19 @@ function drawEquipmentAtlasCell(ctx, atlas, rarity, dx, dy, dw, dh) {
 }
 
 function drawPlayerEquipment(ctx, equipment, time, equipmentSprites) {
-  const armor = RARITY[equipment?.armor];
   const weapon = RARITY[equipment?.weapon];
-  if (armor) {
-    const armorLevel = Math.max(1, equipment?.armorLevel || 1);
-    const tier = Math.min(2, (armor.skinTier || 0) + Math.floor((armorLevel - 1) / 7));
-    ctx.save();
-    ctx.shadowColor = armor.color;
-    ctx.shadowBlur = 12 + tier * 8 + armorLevel;
-    const armorWidth = 90 + tier * 4;
-    const armorHeight = armorWidth * 1.24;
-    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.armor, equipment.armor, 2 - armorWidth / 2, -102, armorWidth, armorHeight)) {
-      ctx.globalAlpha = .82;
-      ctx.fillStyle = `${armor.color}aa`;
-      ctx.strokeStyle = armor.color;
-      ctx.lineWidth = 2 + tier;
-      ctx.beginPath();
-      ctx.moveTo(-29 - tier * 3, -52); ctx.lineTo(-18, -17); ctx.lineTo(0, -7 - tier * 2);
-      ctx.lineTo(18, -17); ctx.lineTo(29 + tier * 3, -52); ctx.lineTo(15, -65 - tier * 3);
-      ctx.lineTo(0, -55); ctx.lineTo(-15, -65 - tier * 3); ctx.closePath(); ctx.fill(); ctx.stroke();
-    }
-    ctx.restore();
-  }
   if (weapon) {
     const weaponLevel = Math.max(1, equipment?.weaponLevel || 1);
     const tier = Math.min(2, (weapon.skinTier || 0) + Math.floor((weaponLevel - 1) / 7));
     const pulse = 1 + Math.sin(time * 6) * .04;
     ctx.save();
-    ctx.translate(-39, -18);
+    ctx.translate(-48, -37);
     ctx.rotate(-.23);
     ctx.scale(pulse, pulse);
     ctx.shadowColor = weapon.color;
     ctx.shadowBlur = 12 + tier * 10 + weaponLevel;
     const weaponHeight = 102 + tier * 6;
-    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.weapon, equipment.weapon, -weaponHeight * .3, -weaponHeight * .92, weaponHeight * .6, weaponHeight)) {
+    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.weapon, equipment.weapon, -weaponHeight * .3, -weaponHeight * .8, weaponHeight * .6, weaponHeight)) {
       ctx.strokeStyle = weapon.color;
       ctx.lineWidth = 7 + tier * 2;
       ctx.beginPath(); ctx.moveTo(0, 16); ctx.lineTo(0, -39 - tier * 8 - weaponLevel * .8); ctx.stroke();
@@ -432,9 +411,19 @@ function drawPlayer(ctx, p, time, sprite, equipment, equipmentSprites) {
     ctx.ellipse(0, 24, 42, 12, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
-    ctx.shadowColor = p.hurt > 0 ? "#fff5d0" : "#ff3928";
-    ctx.shadowBlur = p.hurt > 0 ? 32 : 20;
-    ctx.drawImage(sprite, -size / 2, 32 - size, size, size);
+    const armor = RARITY[equipment?.armor];
+    ctx.shadowColor = p.hurt > 0 ? "#fff5d0" : armor?.color || "#ff3928";
+    ctx.shadowBlur = p.hurt > 0 ? 32 : armor ? 24 : 20;
+    const armored = armor && drawEquipmentAtlasCell(
+      ctx,
+      equipmentSprites?.armor,
+      equipment.armor,
+      -69,
+      32 - size,
+      138,
+      size,
+    );
+    if (!armored) ctx.drawImage(sprite, -size / 2, 32 - size, size, size);
     ctx.shadowBlur = 0;
     drawPlayerEquipment(ctx, equipment, time, equipmentSprites);
     ctx.restore();
@@ -1786,9 +1775,9 @@ export default function DemonGame() {
     const playerSprite = new Image();
     playerSprite.src = `${BASE_PATH}/demon-king-sprite.png`;
     const armorAtlas = new Image();
-    armorAtlas.src = `${BASE_PATH}/equipment/armor-atlas-v1.png`;
+    armorAtlas.src = `${BASE_PATH}/equipment/player-armor-atlas-v2.png`;
     const weaponAtlas = new Image();
-    weaponAtlas.src = `${BASE_PATH}/equipment/weapon-atlas-v1.png`;
+    weaponAtlas.src = `${BASE_PATH}/equipment/weapon-atlas-v2.png`;
     const undeadRaceAtlas = new Image();
     undeadRaceAtlas.src = `${BASE_PATH}/equipment/undead-races-atlas-v1.png`;
     const minionSprites = [1, 2, 3].map(tier => {
