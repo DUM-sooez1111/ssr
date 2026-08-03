@@ -39,9 +39,9 @@ const LOOT_TABLE = {
   undead: {
     label: "망자",
     names: {
-      common: "해골 계약", uncommon: "망자 서약", rare: "망령 핵", heroic: "기사의 유골",
-      epic: "심연의 뼈", unique: "혼식 심장", legendary: "죽음의 인장", mythic: "사령왕의 핵",
-      ancient: "태고의 유해", demonic: "마왕의 불사령",
+      common: "해골 보병", uncommon: "시체 거인", rare: "푸른 망령", heroic: "죽음의 기사",
+      epic: "뼈 골렘", unique: "흡혈 귀공", legendary: "황금 미라", mythic: "지옥 해골",
+      ancient: "태고의 리치", demonic: "심연의 공포군주",
     },
   },
 };
@@ -59,6 +59,21 @@ const RARITY = {
   demonic: { label: "마왕", power: 22, chance: .5, color: "#ff304c", skinTier: 2 },
 };
 const RARITY_ORDER = Object.keys(RARITY);
+const EQUIPMENT_ATLASES = {
+  armor: "armor-atlas-v1.png",
+  weapon: "weapon-atlas-v1.png",
+  undead: "undead-races-atlas-v1.png",
+};
+
+function equipmentPreviewStyle(item) {
+  const index = RARITY_ORDER.indexOf(item.rarity);
+  if (index < 0 || !EQUIPMENT_ATLASES[item.category]) return { background: RARITY[item.rarity]?.color };
+  return {
+    backgroundImage: `url(${BASE_PATH}/equipment/${EQUIPMENT_ATLASES[item.category]})`,
+    backgroundPosition: `${(index % 5) * 25}% ${Math.floor(index / 5) * 100}%`,
+    backgroundSize: "500% 200%",
+  };
+}
 
 const SKILL_BRANCHES = [
   {
@@ -69,6 +84,9 @@ const SKILL_BRANCHES = [
       { id: "inferno", name: "지옥의 핵", icon: "☄", max: 3, requires: ["blade", 2], description: "지옥불 피해 +20" },
       { id: "execution", name: "처형자", icon: "☠", max: 3, requires: ["inferno", 2], description: "약한 적에게 추가 피해" },
       { id: "haste", name: "광란", icon: "⚡", max: 3, requires: ["rage", 3], description: "기본 공격 속도 증가" },
+      { id: "bloodlust", name: "피의 갈증", icon: "✦", max: 3, requires: ["rage", 4], description: "공격 치명타 확률 +8%" },
+      { id: "bossbane", name: "용사왕 파멸", icon: "♛", max: 3, requires: ["blade", 3], description: "강적·보스 피해 +15%" },
+      { id: "cataclysm", name: "대재앙", icon: "☄", max: 1, requires: ["inferno", 3], description: "지옥불 범위 증가·재사용 감소" },
     ],
   },
   {
@@ -79,6 +97,9 @@ const SKILL_BRANCHES = [
       { id: "fortress", name: "왕좌의 수호자", icon: "♜", max: 1, requires: ["guard", 3], description: "최대 체력 +50" },
       { id: "recovery", name: "불사 재생", icon: "♥", max: 3, requires: ["vitality", 3], description: "초당 체력 회복" },
       { id: "thorns", name: "가시 갑주", icon: "✹", max: 3, requires: ["guard", 2], description: "근접 공격자에게 반사 피해" },
+      { id: "ward", name: "마력 차단", icon: "◈", max: 3, requires: ["guard", 2], description: "원거리 피해 8% 감소" },
+      { id: "laststand", name: "마왕의 귀환", icon: "♜", max: 1, requires: ["fortress", 1], description: "웨이브마다 1회 치명상 생존" },
+      { id: "bastion", name: "군단 방벽", icon: "⬢", max: 3, requires: ["thorns", 2], description: "망자·구조물 피해 6% 감소" },
     ],
   },
   {
@@ -89,6 +110,9 @@ const SKILL_BRANCHES = [
       { id: "fortune", name: "마왕의 행운", icon: "✦", max: 3, requires: ["commander", 1], description: "고등급 뽑기 확률 증가" },
       { id: "legion", name: "불사의 군단", icon: "♚", max: 3, requires: ["commander", 2], description: "망자 상한 +3" },
       { id: "architect", name: "지옥 건축술", icon: "⌂", max: 3, requires: ["harvest", 3], description: "구조물 효율 증가" },
+      { id: "magnet", name: "영혼의 인력", icon: "◎", max: 3, requires: ["harvest", 3], description: "영혼·경험치 흡수 범위 증가" },
+      { id: "necromancy", name: "고위 사령술", icon: "☥", max: 3, requires: ["legion", 2], description: "망자 소환 비용 -2" },
+      { id: "lifebond", name: "불사의 결속", icon: "∞", max: 3, requires: ["commander", 3], description: "망자 공격 시 체력 흡수" },
     ],
   },
 ];
@@ -142,7 +166,7 @@ function readProgress() {
           .map(item => ({
             category: item.category,
             rarity: item.rarity,
-            name: String(item.name || LOOT_TABLE[item.category].names[item.rarity]),
+            name: LOOT_TABLE[item.category].names[item.rarity],
             count: Math.max(1, Math.floor(Number(item.count) || 1)),
             level: clamp(Math.floor(Number(item.level) || 1), 1, MAX_ITEM_LEVEL),
           }))
@@ -224,6 +248,7 @@ function makeState() {
     restTimer: 0,
     spawnTimer: 0,
     bossSpawnedWave: 0,
+    lastStandWave: 0,
     kills: 0,
     score: 0,
     souls: 0,
@@ -285,42 +310,37 @@ function drawDiamond(ctx, x, y, r, fill, stroke = "#111") {
   ctx.stroke();
 }
 
-function drawPlayerEquipment(ctx, equipment, time) {
+function drawEquipmentAtlasCell(ctx, atlas, rarity, dx, dy, dw, dh) {
+  if (!atlas?.complete || !atlas.naturalWidth || !RARITY[rarity]) return false;
+  const index = RARITY_ORDER.indexOf(rarity);
+  if (index < 0) return false;
+  const sw = atlas.naturalWidth / 5;
+  const sh = atlas.naturalHeight / 2;
+  const sx = (index % 5) * sw;
+  const sy = Math.floor(index / 5) * sh;
+  ctx.drawImage(atlas, sx, sy, sw, sh, dx, dy, dw, dh);
+  return true;
+}
+
+function drawPlayerEquipment(ctx, equipment, time, equipmentSprites) {
   const armor = RARITY[equipment?.armor];
   const weapon = RARITY[equipment?.weapon];
   if (armor) {
     const armorLevel = Math.max(1, equipment?.armorLevel || 1);
     const tier = Math.min(2, (armor.skinTier || 0) + Math.floor((armorLevel - 1) / 7));
     ctx.save();
-    ctx.globalAlpha = .82;
     ctx.shadowColor = armor.color;
     ctx.shadowBlur = 12 + tier * 8 + armorLevel;
-    ctx.fillStyle = `${armor.color}aa`;
-    ctx.strokeStyle = armor.color;
-    ctx.lineWidth = 2 + tier;
-    ctx.beginPath();
-    ctx.moveTo(-29 - tier * 3, -52);
-    ctx.lineTo(-18, -17);
-    ctx.lineTo(0, -7 - tier * 2);
-    ctx.lineTo(18, -17);
-    ctx.lineTo(29 + tier * 3, -52);
-    ctx.lineTo(15, -65 - tier * 3);
-    ctx.lineTo(0, -55);
-    ctx.lineTo(-15, -65 - tier * 3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(-30, -52, 9 + tier * 3, 0, Math.PI * 2);
-    ctx.arc(30, -52, 9 + tier * 3, 0, Math.PI * 2);
-    ctx.fill();
-    if (tier >= 2) {
-      ctx.fillStyle = "#17100d";
+    const armorSize = 108 + tier * 7 + Math.min(8, armorLevel * .35);
+    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.armor, equipment.armor, -armorSize / 2, -105 - tier * 2, armorSize, armorSize * 1.25)) {
+      ctx.globalAlpha = .82;
+      ctx.fillStyle = `${armor.color}aa`;
+      ctx.strokeStyle = armor.color;
+      ctx.lineWidth = 2 + tier;
       ctx.beginPath();
-      ctx.moveTo(-40, -61); ctx.lineTo(-53, -76); ctx.lineTo(-32, -68); ctx.closePath();
-      ctx.moveTo(40, -61); ctx.lineTo(53, -76); ctx.lineTo(32, -68); ctx.closePath();
-      ctx.fill();
-      drawDiamond(ctx, 0, -39, 8, armor.color, "#fff0bf");
+      ctx.moveTo(-29 - tier * 3, -52); ctx.lineTo(-18, -17); ctx.lineTo(0, -7 - tier * 2);
+      ctx.lineTo(18, -17); ctx.lineTo(29 + tier * 3, -52); ctx.lineTo(15, -65 - tier * 3);
+      ctx.lineTo(0, -55); ctx.lineTo(-15, -65 - tier * 3); ctx.closePath(); ctx.fill(); ctx.stroke();
     }
     ctx.restore();
   }
@@ -334,26 +354,19 @@ function drawPlayerEquipment(ctx, equipment, time) {
     ctx.scale(pulse, pulse);
     ctx.shadowColor = weapon.color;
     ctx.shadowBlur = 12 + tier * 10 + weaponLevel;
-    ctx.strokeStyle = weapon.color;
-    ctx.lineWidth = 7 + tier * 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 16); ctx.lineTo(0, -39 - tier * 8 - weaponLevel * .8); ctx.stroke();
-    ctx.strokeStyle = "#f5f3e8";
-    ctx.lineWidth = 2 + tier;
-    ctx.beginPath();
-    ctx.moveTo(0, 12); ctx.lineTo(0, -38 - tier * 8 - weaponLevel * .8); ctx.stroke();
-    ctx.fillStyle = weapon.color;
-    ctx.beginPath();
-    ctx.moveTo(0, -53 - tier * 9); ctx.lineTo(8 + tier * 2, -35); ctx.lineTo(-8 - tier * 2, -35); ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = "#d8aa4d";
-    ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.moveTo(-13 - tier * 2, 10); ctx.lineTo(13 + tier * 2, 10); ctx.stroke();
+    const weaponHeight = 88 + tier * 8 + Math.min(10, weaponLevel * .5);
+    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.weapon, equipment.weapon, -weaponHeight * .3, -weaponHeight + 18, weaponHeight * .6, weaponHeight)) {
+      ctx.strokeStyle = weapon.color;
+      ctx.lineWidth = 7 + tier * 2;
+      ctx.beginPath(); ctx.moveTo(0, 16); ctx.lineTo(0, -39 - tier * 8 - weaponLevel * .8); ctx.stroke();
+      ctx.strokeStyle = "#f5f3e8"; ctx.lineWidth = 2 + tier;
+      ctx.beginPath(); ctx.moveTo(0, 12); ctx.lineTo(0, -38 - tier * 8 - weaponLevel * .8); ctx.stroke();
+    }
     ctx.restore();
   }
 }
 
-function drawPlayer(ctx, p, time, sprite, equipment) {
+function drawPlayer(ctx, p, time, sprite, equipment, equipmentSprites) {
   ctx.save();
   const stride = p.moving ? Math.sin(time * 13) : Math.sin(time * 4) * .18;
   const stepLift = p.moving ? Math.abs(Math.sin(time * 13)) : 0;
@@ -385,7 +398,7 @@ function drawPlayer(ctx, p, time, sprite, equipment) {
     ctx.shadowBlur = p.hurt > 0 ? 32 : 20;
     ctx.drawImage(sprite, -size / 2, 32 - size, size, size);
     ctx.shadowBlur = 0;
-    drawPlayerEquipment(ctx, equipment, time);
+    drawPlayerEquipment(ctx, equipment, time, equipmentSprites);
     ctx.restore();
     return;
   }
@@ -542,7 +555,7 @@ function drawEnemy(ctx, e, sprites, time) {
   ctx.restore();
 }
 
-function drawMinion(ctx, m, sprites, time) {
+function drawMinion(ctx, m, sprites, raceAtlas, time) {
   ctx.save();
   const stride = m.moving ? Math.sin(time * 11 + (m.phase || 0)) : Math.sin(time * 3.5 + (m.phase || 0)) * .12;
   const stepLift = m.moving ? Math.abs(Math.sin(time * 11 + (m.phase || 0))) : 0;
@@ -572,11 +585,12 @@ function drawMinion(ctx, m, sprites, time) {
     ctx.fill();
   }
 
-  if (sprite?.complete && sprite.naturalWidth > 0) {
+  if ((raceAtlas?.complete && raceAtlas.naturalWidth > 0 && equipment) || (sprite?.complete && sprite.naturalWidth > 0)) {
     ctx.shadowColor = m.elite ? "#ff2d21" : equipment?.color || (tier === 2 ? "#ff9d32" : "#63eaff");
     ctx.shadowBlur = (m.elite ? 34 : 10 + tier * 7) + Math.min(14, (m.kills || 0)) + Math.min(16, m.equippedLevel || 1);
     ctx.globalAlpha = m.hurt > 0 ? .58 : 1;
-    ctx.drawImage(sprite, -size / 2, 23 - size, size, size);
+    const raceDrawn = equipment && drawEquipmentAtlasCell(ctx, raceAtlas, m.equippedRarity, -size * .39, 23 - size, size * .78, size);
+    if (!raceDrawn && sprite?.complete && sprite.naturalWidth > 0) ctx.drawImage(sprite, -size / 2, 23 - size, size, size);
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
   } else {
@@ -617,7 +631,8 @@ function drawMinion(ctx, m, sprites, time) {
   ctx.fillStyle = equipment?.color || (tier === 2 ? "#ffd66d" : "#b7fbff");
   ctx.font = "800 10px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(`${m.elite ? "★ 엘리트 " : ""}망자 LV.${visualLevel} · 처치 ${m.kills || 0}`, 0, barY + 18);
+  const raceName = LOOT_TABLE.undead.names[m.equippedRarity] || "망자";
+  ctx.fillText(`${m.elite ? "★ 엘리트 " : ""}${raceName} LV.${visualLevel} · 처치 ${m.kills || 0}`, 0, barY + 18);
   ctx.restore();
 }
 
@@ -679,6 +694,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
   const undeadPower = inventoryPower(s.inventory, "undead") + equippedUndeadPower(s) * 2;
   const skillTree = { ...makeSkillTree(), ...(s.skillTree || {}) };
   const playerDamageMultiplier = 1 - Math.min(.65, armorPower * .015 + skillTree.guard * .04);
+  const projectileDamageMultiplier = playerDamageMultiplier * (1 - Math.min(.4, skillTree.ward * .08));
+  const companionDamageMultiplier = 1 - Math.min(.4, skillTree.bastion * .06);
   if (skillTree.recovery > 0) s.player.hp = Math.min(s.player.maxHp, s.player.hp + skillTree.recovery * .7 * dt);
 
   if (s.waveTimer > 24) {
@@ -734,6 +751,8 @@ function updateGame(s, dt, keys, mouse, canvas) {
       life: 1.35,
       damage: (24 + s.magicLevel * 6 + s.swordLevel * 5 + weaponPower * 2) * (1 + skillTree.rage * .08),
       execution: skillTree.execution,
+      criticalChance: skillTree.bloodlust * .08,
+      bossDamage: skillTree.bossbane * .15,
     });
     addParticles(s, s.player.x, s.player.y, "#d574ff", 5, .4);
   };
@@ -788,7 +807,9 @@ function updateGame(s, dt, keys, mouse, canvas) {
     for (const e of s.enemies) {
       if (shot.life > 0 && dist(shot, e) < e.r + 10) {
         const executeMultiplier = shot.execution > 0 && e.hp / e.maxHp < .35 ? 1 + shot.execution * .18 : 1;
-        hurtEnemy(e, shot.damage * executeMultiplier, "#d87cff"); shot.life = 0;
+        const critical = Math.random() < (shot.criticalChance || 0);
+        const bossMultiplier = e.type === "boss" ? 1 + (shot.bossDamage || 0) : 1;
+        hurtEnemy(e, shot.damage * executeMultiplier * bossMultiplier * (critical ? 2 : 1), critical ? "#fff1a6" : "#d87cff"); shot.life = 0;
       }
     }
   }
@@ -801,7 +822,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       const target = s.minions.find(m => m.id === shot.targetId && !m.dead);
       if (target && dist(shot, target) < 24) {
         shot.life = 0;
-        target.hp -= shot.damage;
+        target.hp -= shot.damage * companionDamageMultiplier;
         target.hurt = .18;
         addParticles(s, target.x, target.y, "#68e8ef", 8, .5);
       }
@@ -809,13 +830,13 @@ function updateGame(s, dt, keys, mouse, canvas) {
       const target = s.structures.find(structure => structure.id === shot.structureId && structure.hp > 0);
       if (target && dist(shot, target) < 35) {
         shot.life = 0;
-        target.hp -= shot.damage;
+        target.hp -= shot.damage * companionDamageMultiplier;
         target.hurt = .18;
         addParticles(s, target.x, target.y, "#8cced6", 8, .5);
       }
     } else if (shot.life > 0 && dist(shot, s.player) < 25) {
       shot.life = 0;
-      s.player.hp -= shot.damage * playerDamageMultiplier;
+      s.player.hp -= shot.damage * projectileDamageMultiplier;
       s.player.hurt = .18;
       s.shake = 5;
       addParticles(s, s.player.x, s.player.y, "#e9bc72", 9, .55);
@@ -853,6 +874,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
           + undeadPower * 4 + (m.kills || 0) * 2 + skillTree.commander * 10 + (m.elite ? 320 : 0);
         const wasAlive = target.hp > 0;
         hurtEnemy(target, damage, knightAdvantage ? "#f5d56a" : "#90e2b1");
+        if (skillTree.lifebond > 0) m.hp = Math.min(m.maxHp, m.hp + damage * skillTree.lifebond * .04);
         m.attackMotion = .24;
         m.attackAngle = a;
         if (wasAlive && target.hp <= 0 && !target.minionKillClaimed) {
@@ -1016,7 +1038,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
       e.y += Math.sin(a) * e.speed * dt;
     } else if (e.attack <= 0) {
       if (targetIsMinion || targetIsStructure) {
-        target.hp -= e.damage;
+        target.hp -= e.damage * companionDamageMultiplier;
         target.hurt = .18;
         addParticles(s, target.x, target.y, targetIsStructure ? "#8cced6" : "#65eaff", 9, .6);
       } else {
@@ -1087,9 +1109,10 @@ function updateGame(s, dt, keys, mouse, canvas) {
     soul.life -= dt;
     soul.phase += dt * 5;
     const d = dist(soul, s.player);
-    if (d < 230 || soul.life < 10) {
+    const soulRange = 230 + skillTree.magnet * 85;
+    if (d < soulRange || soul.life < 10) {
       const a = Math.atan2(s.player.y - soul.y, s.player.x - soul.x);
-      const speed = 110 + (230 - Math.min(230, d)) * 1.8;
+      const speed = 110 + (soulRange - Math.min(soulRange, d)) * 1.25;
       soul.x += Math.cos(a) * speed * dt;
       soul.y += Math.sin(a) * speed * dt;
     }
@@ -1104,9 +1127,10 @@ function updateGame(s, dt, keys, mouse, canvas) {
     orb.life -= dt;
     orb.phase += dt * 4;
     const d = dist(orb, s.player);
-    if (d < 210 || orb.life < 11) {
+    const xpRange = 210 + skillTree.magnet * 85;
+    if (d < xpRange || orb.life < 11) {
       const a = Math.atan2(s.player.y - orb.y, s.player.x - orb.x);
-      const speed = 100 + (210 - Math.min(210, d)) * 1.6;
+      const speed = 100 + (xpRange - Math.min(xpRange, d)) * 1.2;
       orb.x += Math.cos(a) * speed * dt;
       orb.y += Math.sin(a) * speed * dt;
     }
@@ -1131,6 +1155,13 @@ function updateGame(s, dt, keys, mouse, canvas) {
   for (const r of s.rings) { r.r += 420 * dt; r.life -= dt; }
   s.rings = s.rings.filter(r => r.life > 0);
 
+  if (s.player.hp <= 0 && skillTree.laststand > 0 && s.lastStandWave !== s.wave) {
+    s.lastStandWave = s.wave;
+    s.player.hp = Math.max(1, s.player.maxHp * .3);
+    s.rings.push({ x: s.player.x, y: s.player.y, r: 12, life: 1, color: "#f4d06d" });
+    addParticles(s, s.player.x, s.player.y, "#fff1a8", 28, 1);
+    s.flash = 1;
+  }
   if (s.player.hp <= 0) { s.over = true; s.win = false; }
 }
 
@@ -1167,10 +1198,13 @@ export default function DemonGame() {
       equippedWeapon: s.equippedWeapon,
       equippedArmor: s.equippedArmor,
       equippedUndead: s.equippedUndead,
-      minions: s.minions.filter(m => !m.dead).map(m => ({ id: m.id, hp: m.hp, maxHp: m.maxHp, kills: m.kills || 0, level: m.level || 0 })),
+      minions: s.minions.filter(m => !m.dead).map(m => ({
+        id: m.id, hp: m.hp, maxHp: m.maxHp, kills: m.kills || 0, level: m.level || 0,
+        raceName: LOOT_TABLE.undead.names[m.equippedRarity] || "망자",
+      })),
       minionCap: MINION_BASE_CAP + (s.skillTree?.legion || 0) * 3,
       structures: s.structures.filter(structure => !structure.dead).map(structure => ({ id: structure.id, type: structure.type, hp: structure.hp, maxHp: structure.maxHp })),
-      summonCost: 8 + (s.summonCount || 0) * 2,
+      summonCost: Math.max(1, 8 + (s.summonCount || 0) * 2 - (s.skillTree?.necromancy || 0) * 2),
       cooldowns: { ...s.cooldowns },
       boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp } : null,
     });
@@ -1258,11 +1292,16 @@ export default function DemonGame() {
   const useSkill = useCallback((skill) => {
     const s = stateRef.current;
     if (!s.started || s.over) return;
+    const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
+    const empoweredDamage = (enemy, baseDamage) => {
+      const critical = Math.random() < tree.bloodlust * .08;
+      const bossMultiplier = enemy.type === "boss" ? 1 + tree.bossbane * .15 : 1;
+      return { damage: baseDamage * bossMultiplier * (critical ? 2 : 1), critical };
+    };
     if (skill === "sword" && s.cooldowns.sword <= 0) {
       s.cooldowns.sword = .75;
       s.player.attackMotion = .28;
       s.player.attackKind = "sword";
-      const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
       const weaponPower = inventoryPower(s.inventory, "weapon") + equippedItemPower(s, "weapon") * 2;
       const angle = Math.atan2(mouseRef.current.y - s.player.y, mouseRef.current.x - s.player.x);
       s.player.angle = angle;
@@ -1270,10 +1309,11 @@ export default function DemonGame() {
       for (const e of s.enemies) {
         const targetAngle = Math.atan2(e.y - s.player.y, e.x - s.player.x);
         if (dist(s.player, e) < 165 + e.r && Math.abs(angleDelta(targetAngle, angle)) < .95) {
-          e.hp -= 52 + s.swordLevel * 14 + weaponPower * 4 + tree.blade * 12;
+          const hit = empoweredDamage(e, 52 + s.swordLevel * 14 + weaponPower * 4 + tree.blade * 12);
+          e.hp -= hit.damage;
           e.x += Math.cos(angle) * 32;
           e.y += Math.sin(angle) * 32;
-          addParticles(s, e.x, e.y, "#8ee6ff", 11, .8);
+          addParticles(s, e.x, e.y, hit.critical ? "#fff1a6" : "#8ee6ff", hit.critical ? 18 : 11, .8);
         }
       }
       s.shake = 4;
@@ -1288,8 +1328,9 @@ export default function DemonGame() {
       s.rings.push({ x: s.player.x, y: s.player.y, r: 20, life: .42, color: "#f8d78e" });
       for (const e of s.enemies) {
         if (dist(s.player, e) < slashRadius) {
-          e.hp -= slashDamage;
-          addParticles(s, e.x, e.y, "#ffe1a2", 10, .8);
+          const hit = empoweredDamage(e, slashDamage);
+          e.hp -= hit.damage;
+          addParticles(s, e.x, e.y, hit.critical ? "#fff7c9" : "#ffe1a2", hit.critical ? 18 : 10, .8);
         }
       }
       s.shake = 5;
@@ -1297,21 +1338,21 @@ export default function DemonGame() {
     if (skill === "fire" && s.cooldowns.fire <= 0) {
       s.player.attackMotion = .32;
       s.player.attackKind = "fire";
-      const tree = { ...makeSkillTree(), ...(s.skillTree || {}) };
-      const fireCooldown = Math.max(4, 7 - s.magicLevel * .25);
-      const fireRadius = 170 + s.magicLevel * 6;
+      const fireCooldown = Math.max(3, 7 - s.magicLevel * .25 - tree.cataclysm * 1.5);
+      const fireRadius = 170 + s.magicLevel * 6 + tree.cataclysm * 65;
       s.cooldowns.fire = fireCooldown;
       s.rings.push({ x: mouseRef.current.x, y: mouseRef.current.y, r: 15, life: .65, color: "#ff4f25" });
       for (const e of s.enemies) {
         if (dist(mouseRef.current, e) < fireRadius) {
-          e.hp -= 95 + s.magicLevel * 18 + tree.inferno * 20;
-          addParticles(s, e.x, e.y, "#ff4a22", 15, 1);
+          const hit = empoweredDamage(e, 95 + s.magicLevel * 18 + tree.inferno * 20);
+          e.hp -= hit.damage;
+          addParticles(s, e.x, e.y, hit.critical ? "#fff0a0" : "#ff4a22", hit.critical ? 24 : 15, 1);
         }
       }
       s.shake = 10; s.flash = .55;
     }
     if (skill === "summon") {
-      const summonCost = 8 + (s.summonCount || 0) * 2;
+      const summonCost = Math.max(1, 8 + (s.summonCount || 0) * 2 - tree.necromancy * 2);
       if (s.souls < summonCost) return;
       const minionCap = MINION_BASE_CAP + (s.skillTree?.legion || 0) * 3;
       const availableSlots = minionCap - s.minions.filter(minion => !minion.dead && minion.hp > 0).length;
@@ -1691,6 +1732,12 @@ export default function DemonGame() {
     enemySprites.src = `${BASE_PATH}/enemy-sprites.png`;
     const playerSprite = new Image();
     playerSprite.src = `${BASE_PATH}/demon-king-sprite.png`;
+    const armorAtlas = new Image();
+    armorAtlas.src = `${BASE_PATH}/equipment/armor-atlas-v1.png`;
+    const weaponAtlas = new Image();
+    weaponAtlas.src = `${BASE_PATH}/equipment/weapon-atlas-v1.png`;
+    const undeadRaceAtlas = new Image();
+    undeadRaceAtlas.src = `${BASE_PATH}/equipment/undead-races-atlas-v1.png`;
     const minionSprites = [1, 2, 3].map(tier => {
       const sprite = new Image();
       sprite.src = `${BASE_PATH}/undead-minion-tier${tier}.png`;
@@ -1761,14 +1808,14 @@ export default function DemonGame() {
         ctx.beginPath(); ctx.moveTo(beam.x1, beam.y1); ctx.lineTo(beam.x2, beam.y2); ctx.stroke();
         ctx.restore();
       }
-      for (const m of s.minions) drawMinion(ctx, m, minionSprites, animationTime);
+      for (const m of s.minions) drawMinion(ctx, m, minionSprites, undeadRaceAtlas, animationTime);
       for (const e of s.enemies) drawEnemy(ctx, e, enemySprites, animationTime);
       if (s.started) drawPlayer(ctx, s.player, animationTime, playerSprite, {
         weapon: s.equippedWeapon,
         armor: s.equippedArmor,
         weaponLevel: s.inventory.find(item => item.category === "weapon" && item.rarity === s.equippedWeapon)?.level || 1,
         armorLevel: s.inventory.find(item => item.category === "armor" && item.rarity === s.equippedArmor)?.level || 1,
-      });
+      }, { armor: armorAtlas, weapon: weaponAtlas });
       for (const swing of s.swings) {
         const alpha = clamp(swing.life / swing.maxLife, 0, 1);
         ctx.save();
@@ -2010,7 +2057,7 @@ export default function DemonGame() {
                       className={`inventory-item ${equipped ? "equipped" : ""}`}
                       onClick={() => equipInventoryItem(item.category, item.rarity)}
                     >
-                      <i style={{ background: RARITY[item.rarity].color }} />
+                      <i className="item-art" style={equipmentPreviewStyle(item)} />
                       <span>
                         <small style={{ color: RARITY[item.rarity].color }}>{RARITY[item.rarity].label} · LV.{item.level || 1}</small>
                         <b>{item.name}{equipped ? " · 장착" : ""}</b>
@@ -2058,7 +2105,7 @@ export default function DemonGame() {
               <div className="minion-index-list">
                 {ui.minions.length === 0 && <small>소환된 망자가 없습니다.</small>}
                 {ui.minions.slice(0, 8).map((minion, index) => (
-                  <span key={minion.id}>#{index + 1} HP {Math.ceil(minion.hp)}/{minion.maxHp} · 처치 {minion.kills}</span>
+                  <span key={minion.id}>#{index + 1} {minion.raceName} · HP {Math.ceil(minion.hp)}/{minion.maxHp} · 처치 {minion.kills}</span>
                 ))}
               </div>
             </section>
