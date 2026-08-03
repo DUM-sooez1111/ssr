@@ -61,7 +61,7 @@ const RARITY = {
 };
 const RARITY_ORDER = Object.keys(RARITY);
 const EQUIPMENT_ATLASES = {
-  armor: "player-armor-atlas-v2.png",
+  armor: "player-armor-atlas-v3.png",
   weapon: "weapon-atlas-v2.png",
   undead: "undead-races-atlas-v1.png",
 };
@@ -1775,7 +1775,7 @@ export default function DemonGame() {
     const playerSprite = new Image();
     playerSprite.src = `${BASE_PATH}/demon-king-sprite.png`;
     const armorAtlas = new Image();
-    armorAtlas.src = `${BASE_PATH}/equipment/player-armor-atlas-v2.png`;
+    armorAtlas.src = `${BASE_PATH}/equipment/player-armor-atlas-v3.png`;
     const weaponAtlas = new Image();
     weaponAtlas.src = `${BASE_PATH}/equipment/weapon-atlas-v2.png`;
     const undeadRaceAtlas = new Image();
