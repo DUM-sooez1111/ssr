@@ -63,7 +63,7 @@ const RARITY_ORDER = Object.keys(RARITY);
 const EQUIPMENT_ATLASES = {
   armor: "player-armor-atlas-v3.png",
   weapon: "weapon-atlas-v2.png",
-  undead: "undead-races-atlas-v1.png",
+  undead: "undead-races-atlas-v2.png",
 };
 
 function equipmentPreviewStyle(item) {
@@ -1799,7 +1799,7 @@ export default function DemonGame() {
     const weaponAtlas = new Image();
     weaponAtlas.src = `${BASE_PATH}/equipment/weapon-atlas-v2.png`;
     const undeadRaceAtlas = new Image();
-    undeadRaceAtlas.src = `${BASE_PATH}/equipment/undead-races-atlas-v1.png`;
+    undeadRaceAtlas.src = `${BASE_PATH}/equipment/undead-races-atlas-v2.png`;
     const minionSprites = [1, 2, 3].map(tier => {
       const sprite = new Image();
       sprite.src = `${BASE_PATH}/undead-minion-tier${tier}.png`;
