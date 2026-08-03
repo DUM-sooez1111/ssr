@@ -131,6 +131,20 @@ const SKILLS = [
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+const minionAttackInterval = (minion, targetType, skillTree) => {
+  const level = Math.max(0, Number(minion.level) || 0);
+  const equipmentLevel = Math.max(1, Number(minion.equippedLevel) || 1);
+  const rarityPower = RARITY[minion.equippedRarity]?.power || 0;
+  const kills = Math.max(0, Number(minion.kills) || 0);
+  const speedBonus = level * .035
+    + (equipmentLevel - 1) * .018
+    + rarityPower * .012
+    + Math.min(.28, kills * .014)
+    + (skillTree.commander || 0) * .06
+    + (minion.elite ? 1 : 0);
+  const baseInterval = targetType === "knight" ? .55 : .75;
+  return Math.max(.16, baseInterval / (1 + speedBonus));
+};
 const arenaXBounds = (y) => {
   const depth = clamp((y - 180) / 675, 0, 1);
   const inset = 305 - depth * 175;
@@ -873,6 +887,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
   for (const m of s.minions) {
     m.hurt = Math.max(0, (m.hurt || 0) - dt);
     m.attackMotion = Math.max(0, (m.attackMotion || 0) - dt);
+    m.attack = Math.max(0, (Number.isFinite(m.attack) ? m.attack : 0) - dt);
     m.moving = false;
     if (m.hp <= 0 || m.dead) continue;
     const previousX = m.x;
@@ -893,16 +908,20 @@ function updateGame(s, dt, keys, mouse, canvas) {
     if (target) {
       const a = Math.atan2(target.y - m.y, target.x - m.x);
       const minionSpeed = 125 + m.level * 8;
-      m.x += Math.cos(a) * minionSpeed * dt; m.y += Math.sin(a) * minionSpeed * dt;
-      m.attack -= dt;
-      if (targetDistance < 35 + m.level * 2 && m.attack <= 0) {
+      const attackRange = 35 + m.level * 2;
+      if (targetDistance > attackRange * .82) {
+        m.x += Math.cos(a) * minionSpeed * dt;
+        m.y += Math.sin(a) * minionSpeed * dt;
+      }
+      if (targetDistance < attackRange && m.attack <= 0) {
         const knightAdvantage = target.type === "knight";
         const damage = (knightAdvantage ? 70 + m.level * 15 : 22 + m.level * 10)
           + undeadPower * 4 + (m.kills || 0) * 2 + skillTree.commander * 10 + (m.elite ? 320 : 0);
         const wasAlive = target.hp > 0;
         hurtEnemy(target, damage, knightAdvantage ? "#f5d56a" : "#90e2b1");
         if (skillTree.lifebond > 0) m.hp = Math.min(m.maxHp, m.hp + damage * skillTree.lifebond * .04);
-        m.attackMotion = .24;
+        const attackInterval = minionAttackInterval(m, target.type, skillTree);
+        m.attackMotion = Math.min(.24, attackInterval * .8);
         m.attackAngle = a;
         if (wasAlive && target.hp <= 0 && !target.minionKillClaimed) {
           target.minionKillClaimed = true;
@@ -912,7 +931,7 @@ function updateGame(s, dt, keys, mouse, canvas) {
           addParticles(s, m.x, m.y, RARITY[m.equippedRarity]?.color || "#70efa4", 12, .65);
           s.rings.push({ x: m.x, y: m.y, r: 6, life: .38, color: RARITY[m.equippedRarity]?.color || "#70efa4" });
         }
-        m.attack = knightAdvantage ? .55 : Math.max(.38, .75 - m.level * .035);
+        m.attack = attackInterval;
       }
     } else {
       const a = Math.atan2(s.player.y - m.y, s.player.x - m.x);
@@ -1289,6 +1308,7 @@ export default function DemonGame() {
           maxHp: Math.max(1, Number(minion.maxHp) || minionMaxHp),
           hp: Math.max(1, Number(minion.hp) || minionMaxHp),
           hurt: Number(minion.hurt) || 0,
+          attack: Math.max(0, Number(minion.attack) || 0),
           kills: Math.max(0, Math.floor(Number(minion.kills) || 0)),
           equippedRarity: RARITY[minion.equippedRarity] ? minion.equippedRarity : equippedUndead,
           equippedLevel: Math.max(1, Math.floor(Number(minion.equippedLevel) || inventory.find(item => item.category === "undead" && item.rarity === equippedUndead)?.level || 1)),
