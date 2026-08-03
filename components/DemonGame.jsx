@@ -368,8 +368,9 @@ function drawPlayerEquipment(ctx, equipment, time, equipmentSprites) {
     ctx.save();
     ctx.shadowColor = armor.color;
     ctx.shadowBlur = 12 + tier * 8 + armorLevel;
-    const armorSize = 108 + tier * 7 + Math.min(8, armorLevel * .35);
-    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.armor, equipment.armor, -armorSize / 2, -105 - tier * 2, armorSize, armorSize * 1.25)) {
+    const armorWidth = 90 + tier * 4;
+    const armorHeight = armorWidth * 1.24;
+    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.armor, equipment.armor, 2 - armorWidth / 2, -102, armorWidth, armorHeight)) {
       ctx.globalAlpha = .82;
       ctx.fillStyle = `${armor.color}aa`;
       ctx.strokeStyle = armor.color;
@@ -386,13 +387,13 @@ function drawPlayerEquipment(ctx, equipment, time, equipmentSprites) {
     const tier = Math.min(2, (weapon.skinTier || 0) + Math.floor((weaponLevel - 1) / 7));
     const pulse = 1 + Math.sin(time * 6) * .04;
     ctx.save();
-    ctx.translate(37 + tier * 3, -29);
-    ctx.rotate(.53);
+    ctx.translate(-39, -18);
+    ctx.rotate(-.23);
     ctx.scale(pulse, pulse);
     ctx.shadowColor = weapon.color;
     ctx.shadowBlur = 12 + tier * 10 + weaponLevel;
-    const weaponHeight = 88 + tier * 8 + Math.min(10, weaponLevel * .5);
-    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.weapon, equipment.weapon, -weaponHeight * .3, -weaponHeight + 18, weaponHeight * .6, weaponHeight)) {
+    const weaponHeight = 102 + tier * 6;
+    if (!drawEquipmentAtlasCell(ctx, equipmentSprites?.weapon, equipment.weapon, -weaponHeight * .3, -weaponHeight * .92, weaponHeight * .6, weaponHeight)) {
       ctx.strokeStyle = weapon.color;
       ctx.lineWidth = 7 + tier * 2;
       ctx.beginPath(); ctx.moveTo(0, 16); ctx.lineTo(0, -39 - tier * 8 - weaponLevel * .8); ctx.stroke();
