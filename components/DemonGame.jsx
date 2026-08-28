@@ -1215,7 +1215,21 @@ export default function DemonGame() {
   const canvasRef = useRef(null);
   const stateRef = useRef(makeState());
   const keysRef = useRef(new Set());
+  const touchKeysRef = useRef(new Map());
+  const aimPointerRef = useRef(null);
   const mouseRef = useRef({ x: 800, y: 450, down: false });
+  const clearInput = useCallback(() => {
+    keysRef.current.clear();
+    for (const [id, input] of touchKeysRef.current) {
+      input.target.classList.remove("pressed");
+      if (input.target.hasPointerCapture?.(id)) input.target.releasePointerCapture(id);
+    }
+    touchKeysRef.current.clear();
+    const id = aimPointerRef.current;
+    aimPointerRef.current = null;
+    mouseRef.current.down = false;
+    if (id !== null && canvasRef.current?.hasPointerCapture?.(id)) canvasRef.current.releasePointerCapture(id);
+  }, []);
   const [ui, setUi] = useState({ started: false, over: false, win: false, wave: 1, rest: 0, hp: 100, maxHp: 100, kills: 0, score: 0, souls: 0, swordLevel: 0, magicLevel: 0, minionLevel: 0, healLevel: 0, playerLevel: 1, xp: 0, xpNeeded: 80, skillPoints: 0, skillTree: makeSkillTree(), inventory: [], equippedWeapon: null, equippedArmor: null, equippedUndead: null, minions: [], minionCap: MINION_BASE_CAP, structures: [], summonCost: 8, cooldowns: {}, boss: null });
   const [muted, setMuted] = useState(false);
   const [hasSave, setHasSave] = useState(false);
@@ -1230,6 +1244,13 @@ export default function DemonGame() {
   const [settings, setSettings] = useState({ motion: true, screenShake: true, autoOpenInventory: true });
   const settingsRef = useRef(settings);
   const [buildMode, setBuildMode] = useState(null);
+  const panelOpen = inventoryOpen || indexOpen || skillTreeOpen || settingsOpen;
+  const panelOpenRef = useRef(false);
+  panelOpenRef.current = panelOpen;
+
+  useEffect(() => {
+    clearInput();
+  }, [panelOpen, ui.started, ui.over, clearInput]);
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
@@ -1767,8 +1788,20 @@ export default function DemonGame() {
 
   useEffect(() => {
     const down = (e) => {
+      if (e.code === "Escape") {
+        setBuildMode(null);
+        setInventoryOpen(false);
+        setIndexOpen(false);
+        setSkillTreeOpen(false);
+        setSettingsOpen(false);
+        clearInput();
+        return;
+      }
+      if (panelOpenRef.current || e.target.closest("input, select, textarea, [contenteditable='true']")) return;
+      if (e.code === "Space" && e.target.closest("button")) return;
       keysRef.current.add(e.code);
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
+      if (e.repeat) return;
       if (e.code === "Space") useSkill("slash");
       if (e.code === "KeyR") useSkill("sword");
       if (e.code === "KeyQ") useSkill("fire");
@@ -1777,13 +1810,22 @@ export default function DemonGame() {
       if (e.code === "Digit2") buySoulItem("heal");
       if (e.code === "Digit3") buySoulItem("magic");
       if (e.code === "Digit4") buySoulItem("minion");
-      if (e.code === "Escape") setBuildMode(null);
     };
     const up = (e) => keysRef.current.delete(e.code);
     window.addEventListener("keydown", down, { passive: false });
     window.addEventListener("keyup", up);
-    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
-  }, [buySoulItem, useSkill]);
+    window.addEventListener("blur", clearInput);
+    window.addEventListener("resize", clearInput);
+    const onVisibility = () => { if (document.hidden) clearInput(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", clearInput);
+      window.removeEventListener("resize", clearInput);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [buySoulItem, useSkill, clearInput]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1813,7 +1855,8 @@ export default function DemonGame() {
       const dt = Math.min(.033, (now - last) / 1000);
       last = now;
       const s = stateRef.current;
-      updateGame(s, dt, keysRef.current, mouseRef.current, canvas);
+      const activeKeys = new Set([...keysRef.current, ...[...touchKeysRef.current.values()].map(input => input.code)]);
+      updateGame(s, dt, activeKeys, mouseRef.current, canvas);
       uiClock += dt;
       if (uiClock > .08) { uiClock = 0; syncUi(); }
 
@@ -1949,6 +1992,26 @@ export default function DemonGame() {
     mouseRef.current.x = (e.clientX - rect.left) / rect.width * W;
     mouseRef.current.y = (e.clientY - rect.top) / rect.height * H;
   };
+  const releaseAim = (e) => {
+    if (e.pointerId !== aimPointerRef.current) return;
+    aimPointerRef.current = null;
+    mouseRef.current.down = false;
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  const holdTouchKey = (e, code) => {
+    e.preventDefault();
+    if (!stateRef.current.started || stateRef.current.over || panelOpenRef.current) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    touchKeysRef.current.set(e.pointerId, { code, target: e.currentTarget });
+    e.currentTarget.classList.add("pressed");
+  };
+  const releaseTouchKey = (e) => {
+    const input = touchKeysRef.current.get(e.pointerId);
+    if (!input) return;
+    touchKeysRef.current.delete(e.pointerId);
+    if (![...touchKeysRef.current.values()].some(other => other.code === input.code)) input.target.classList.remove("pressed");
+    if (input.target.hasPointerCapture?.(e.pointerId)) input.target.releasePointerCapture(e.pointerId);
+  };
 
   const inventoryItems = ui.inventory
     .filter(item => item.category === inventoryTab)
@@ -1998,18 +2061,28 @@ export default function DemonGame() {
       <section className="game-wrap">
         <canvas
           ref={canvasRef} width={W} height={H} tabIndex={0}
-          onMouseMove={canvasPoint}
-          onMouseDown={(e) => {
+          onPointerMove={(e) => {
+            if ((e.pointerType === "mouse" && aimPointerRef.current === null) || e.pointerId === aimPointerRef.current) canvasPoint(e);
+          }}
+          onPointerDown={(e) => {
+            if (panelOpen || aimPointerRef.current !== null || !stateRef.current.started || stateRef.current.over) return;
+            e.preventDefault();
             canvasPoint(e);
+            e.currentTarget.focus({ preventScroll: true });
             if (buildMode) {
               placeStructure(buildMode);
               return;
             }
             if (e.button === 2) useSkill("sword");
-            else mouseRef.current.down = true;
+            else if (e.button === 0) {
+              aimPointerRef.current = e.pointerId;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              mouseRef.current.down = true;
+            }
           }}
-          onMouseUp={(e) => { if (e.button !== 2) mouseRef.current.down = false; }}
-          onMouseLeave={() => { mouseRef.current.down = false; }}
+          onPointerUp={releaseAim}
+          onPointerCancel={releaseAim}
+          onLostPointerCapture={releaseAim}
           onContextMenu={(e) => e.preventDefault()}
           aria-label="마왕의 최종 방어선 게임 화면"
           className={buildMode ? "building" : ""}
@@ -2255,6 +2328,7 @@ export default function DemonGame() {
               </button>
             </div>
             <div className="quick-controls"><span><kbd>WASD</kbd> 이동</span><span><kbd>클릭</kbd> 암흑탄</span><span><kbd>R / 우클릭</kbd> 마왕검</span></div>
+            <p className="touch-note">모바일: 아래 방향키로 이동 · 맵을 눌러 조준/공격<br />장비와 건축은 큰 화면의 PC를 추천합니다.</p>
           </div>
         )}
 
@@ -2276,6 +2350,8 @@ export default function DemonGame() {
                 <button
                   key={x.id}
                   className="skill"
+                  aria-label={x.name}
+                  title={x.name}
                   onClick={() => useSkill(x.id)}
                   disabled={x.id === "summon" && (ui.souls < ui.summonCost || ui.minions.length >= ui.minionCap)}
                   style={{ "--skill": x.color }}
@@ -2290,6 +2366,25 @@ export default function DemonGame() {
           </div>
         )}
       </section>
+
+      {ui.started && !ui.over && (
+        <section className="touch-controls" aria-label="모바일 전투 조작">
+          <div className="touch-dpad">
+            {[["KeyW", "↑", "위로 이동"], ["KeyA", "←", "왼쪽 이동"], ["KeyS", "↓", "아래로 이동"], ["KeyD", "→", "오른쪽 이동"]].map(([code, symbol, label]) => (
+              <button type="button" key={code} data-touch-key={code} aria-label={label}
+                disabled={panelOpen}
+                onPointerDown={e => holdTouchKey(e, code)} onPointerUp={releaseTouchKey}
+                onPointerCancel={releaseTouchKey} onLostPointerCapture={releaseTouchKey}>{symbol}</button>
+            ))}
+          </div>
+          <div className="touch-attack">
+            <button type="button" data-touch-key="KeyF" disabled={panelOpen}
+              onPointerDown={e => holdTouchKey(e, "KeyF")} onPointerUp={releaseTouchKey}
+              onPointerCancel={releaseTouchKey} onLostPointerCapture={releaseTouchKey}>암흑탄<br /><small>길게 누르기</small></button>
+            <p>맵 터치로 조준 · 스킬은 아이콘 터치<br />장비·건축은 PC / 큰 화면 권장</p>
+          </div>
+        </section>
+      )}
 
       <footer>
         <span><i className="red-dot" /> 적은 망자가 있으면 망자를 먼저 공격합니다</span>
